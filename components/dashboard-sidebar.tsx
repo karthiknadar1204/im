@@ -17,12 +17,11 @@ import {
 } from "@/components/ui/sidebar"
 import { 
   Home, 
-  Users, 
+  Image as ImageIcon,
+  Brain,
+  Palette,
+  Images,
   Settings, 
-  BarChart3, 
-  FileText, 
-  Mail, 
-  Calendar,
   LogOut,
   User,
   CreditCard
@@ -49,40 +48,34 @@ export function DashboardSidebar() {
       isActive: pathname === '/dashboard'
     },
     {
+      href: '/generate-image',
+      icon: ImageIcon,
+      label: 'Generate Image',
+      isActive: pathname === '/generate-image'
+    },
+    {
+      href: '/my-models',
+      icon: Brain,
+      label: 'My Models',
+      isActive: pathname === '/my-models'
+    },
+    {
+      href: '/train-model',
+      icon: Palette,
+      label: 'Train Model',
+      isActive: pathname === '/train-model'
+    },
+    {
+      href: '/my-images',
+      icon: Images,
+      label: 'My Images',
+      isActive: pathname === '/my-images'
+    },
+    {
       href: '/billing',
       icon: CreditCard,
       label: 'Billing',
       isActive: pathname === '/billing'
-    },
-    {
-      href: '/users',
-      icon: Users,
-      label: 'Users',
-      isActive: pathname === '/users'
-    },
-    {
-      href: '/analytics',
-      icon: BarChart3,
-      label: 'Analytics',
-      isActive: pathname === '/analytics'
-    },
-    {
-      href: '/reports',
-      icon: FileText,
-      label: 'Reports',
-      isActive: pathname === '/reports'
-    },
-    {
-      href: '/messages',
-      icon: Mail,
-      label: 'Messages',
-      isActive: pathname === '/messages'
-    },
-    {
-      href: '/calendar',
-      icon: Calendar,
-      label: 'Calendar',
-      isActive: pathname === '/calendar'
     }
   ]
 
