@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { imageGenerationSchema, type ImageGenerationFormValues } from "@/lib/schemas/image-generation";
 import { models, aspectRatios, outputFormats } from "@/lib/options/image-generation";
+import { generateImageFromValues } from "@/app/actions/image-actions";
+import { useImageStore } from "@/lib/store/image-store";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,6 +42,8 @@ import {
 
 
 export function ImageGenerationForm() {
+  const { addImage, updateImage, updateImageStatus } = useImageStore();
+  
   const form = useForm<ImageGenerationFormValues>({
     resolver: zodResolver(imageGenerationSchema),
     defaultValues: {
@@ -53,9 +58,58 @@ export function ImageGenerationForm() {
     },
   });
 
-  function onSubmit(values: ImageGenerationFormValues) {
+  // Watch the model value to dynamically adjust inference steps
+  const selectedModel = form.watch("model");
+  
+  // Get the appropriate range and default value for inference steps based on model
+  const getInferenceStepsConfig = (model: string) => {
+    if (model === "flux-schnell") {
+      return { min: 1, max: 4, defaultValue: 4 };
+    }
+    return { min: 1, max: 50, defaultValue: 20 };
+  };
+
+    const inferenceStepsConfig = getInferenceStepsConfig(selectedModel);
+
+    // Update inference steps when model changes
+  useEffect(() => {
+    const currentValue = form.getValues("numInferenceSteps");
+    const newConfig = getInferenceStepsConfig(selectedModel);
+    
+    // If current value is outside the new range, reset to default
+    if (currentValue < newConfig.min || currentValue > newConfig.max) {
+      form.setValue("numInferenceSteps", newConfig.defaultValue);
+    }
+  }, [selectedModel, form]);
+
+  async function onSubmit(values: ImageGenerationFormValues) {
     console.log("Form values:", values);
-    // TODO: Handle form submission
+    
+    // Add a placeholder image entry with 'generating' status
+    const tempId = crypto.randomUUID();
+    addImage({
+      urls: [],
+      parameters: values,
+      status: 'generating',
+    }, tempId);
+    
+    try {
+      const result = await generateImageFromValues(values);
+      
+      if (result.success && result.data) {
+        // Update the existing entry with the generated URLs and completed status
+        updateImage(tempId, {
+          urls: result.data,
+          status: 'completed',
+        });
+      } else {
+        // Update with error status
+        updateImageStatus(tempId, 'error', result.error);
+      }
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      updateImageStatus(tempId, 'error', 'An unexpected error occurred');
+    }
   }
 
   return (
@@ -270,17 +324,16 @@ export function ImageGenerationForm() {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Number of denoising steps during generation.</p>
-                        <p><strong>Range:</strong> 1-50 steps</p>
-                        <p><strong>Low (1-20):</strong> Faster generation, less detail</p>
-                        <p><strong>Medium (21-35):</strong> Good balance of speed and quality</p>
-                        <p><strong>High (36-50):</strong> Slower generation, maximum detail</p>
+                        <p><strong>Flux Dev:</strong> 1-50 steps (slower, higher quality)</p>
+                        <p><strong>Flux Schnell:</strong> 1-4 steps (faster, good quality)</p>
+                        <p><strong>Current model:</strong> {selectedModel === "flux-dev" ? "Flux Dev" : "Flux Schnell"}</p>
                       </TooltipContent>
                     </Tooltip>
                   </FormLabel>
                   <FormControl>
                     <Slider
-                      min={1}
-                      max={50}
+                      min={inferenceStepsConfig.min}
+                      max={inferenceStepsConfig.max}
                       step={1}
                       value={[field.value]}
                       onValueChange={(value) => field.onChange(value[0])}
@@ -288,7 +341,7 @@ export function ImageGenerationForm() {
                     />
                   </FormControl>
                   <FormDescription>
-                    Number of denoising steps (1-50)
+                    Number of denoising steps ({inferenceStepsConfig.min}-{inferenceStepsConfig.max})
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

@@ -1,4 +1,5 @@
 import { ImageGenerationForm } from "@/components/image-generation-form"
+import { GeneratedImages } from "@/components/GeneratedImages"
 
 export default function ImageGenerationPage() {
   return (
@@ -10,8 +11,13 @@ export default function ImageGenerationPage() {
         </p>
       </div>
       
-      <div className="flex justify-start">
-        <ImageGenerationForm />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="flex justify-start">
+          <ImageGenerationForm />
+        </div>
+        <div className="flex justify-start">
+          <GeneratedImages />
+        </div>
       </div>
     </div>
   )

@@ -30,6 +30,22 @@ export const imageGenerationSchema = z.object({
   numInferenceSteps: z.number().min(1).max(50).step(1),
   outputQuality: z.number().min(1).max(100).step(1),
   prompt: z.string().min(1, "Please enter a prompt"),
-})
+}).superRefine((data, ctx) => {
+  // Validate inference steps based on model
+  if (data.model === "flux-dev" && (data.numInferenceSteps < 1 || data.numInferenceSteps > 50)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Flux Dev model requires 1-50 inference steps",
+      path: ["numInferenceSteps"],
+    });
+  }
+  if (data.model === "flux-schnell" && (data.numInferenceSteps < 1 || data.numInferenceSteps > 4)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Flux Schnell model requires 1-4 inference steps",
+      path: ["numInferenceSteps"],
+    });
+  }
+});
 
 export type ImageGenerationFormValues = z.infer<typeof imageGenerationSchema> 
