@@ -1,9 +1,18 @@
-import React from 'react'
+import { ImageGenerationForm } from "@/components/image-generation-form"
 
-const ImageGeneration = () => {
+export default function ImageGenerationPage() {
   return (
-    <div>ImageGeneration</div>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold">Image Generation</h2>
+        <p className="text-muted-foreground">
+          Create stunning AI-generated images with customizable parameters.
+        </p>
+      </div>
+      
+      <div className="flex justify-center">
+        <ImageGenerationForm />
+      </div>
+    </div>
   )
 }
-
-export default ImageGeneration
