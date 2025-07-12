@@ -2,7 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import * as z from "zod";
+import { imageGenerationSchema, type ImageGenerationFormValues } from "@/lib/schemas/image-generation";
+import { models, aspectRatios, outputFormats } from "@/lib/options/image-generation";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -33,64 +34,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const imageGenerationSchema = z.object({
-  model: z.enum(["flux-dev", "flux-schnell"], {
-    required_error: "Please select a model",
-  }),
-  promptGuidance: z.number().min(0).max(10).step(0.5),
-  numOutputs: z.number().int().min(1).max(4),
-  aspectRatio: z.enum(
-    [
-      "1:1",
-      "16:9",
-      "9:16",
-      "21:9",
-      "9:21",
-      "4:5",
-      "5:4",
-      "4:3",
-      "3:4",
-      "2:3",
-      "3:2",
-    ],
-    {
-      required_error: "Please select an aspect ratio",
-    }
-  ),
-  outputFormat: z.enum(["webp", "png", "jpg"], {
-    required_error: "Please select an output format",
-  }),
-  numInferenceSteps: z.number().min(1).max(50).step(1),
-  outputQuality: z.number().min(1).max(100).step(1),
-  prompt: z.string().min(1, "Please enter a prompt"),
-});
 
-type ImageGenerationFormValues = z.infer<typeof imageGenerationSchema>;
 
-const models = [
-  { value: "flux-dev", label: "Flux Dev Model" },
-  { value: "flux-schnell", label: "Flux Schnell Model" },
-];
 
-const aspectRatios = [
-  { value: "1:1", label: "1:1 (Square)" },
-  { value: "16:9", label: "16:9 (Landscape)" },
-  { value: "9:16", label: "9:16 (Portrait)" },
-  { value: "21:9", label: "21:9 (Ultrawide)" },
-  { value: "9:21", label: "9:21 (Tall)" },
-  { value: "4:5", label: "4:5 (Portrait)" },
-  { value: "5:4", label: "5:4 (Landscape)" },
-  { value: "4:3", label: "4:3 (Standard)" },
-  { value: "3:4", label: "3:4 (Portrait)" },
-  { value: "2:3", label: "2:3 (Portrait)" },
-  { value: "3:2", label: "3:2 (Landscape)" },
-];
-
-const outputFormats = [
-  { value: "webp", label: "WebP" },
-  { value: "png", label: "PNG" },
-  { value: "jpg", label: "JPG" },
-];
 
 export function ImageGenerationForm() {
   const form = useForm<ImageGenerationFormValues>({

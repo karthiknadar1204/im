@@ -16,16 +16,10 @@ import {
   SidebarTrigger
 } from "@/components/ui/sidebar"
 import { 
-  Home, 
-  Image as ImageIcon,
-  Brain,
-  Palette,
-  Images,
-  Settings, 
   LogOut,
-  User,
-  CreditCard
+  User
 } from "lucide-react"
+import { navigationItems, settingsItems } from "@/lib/options/sidebar"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Link from "next/link"
@@ -40,44 +34,10 @@ export function DashboardSidebar() {
     signOut()
   }
 
-  const navigationItems = [
-    {
-      href: '/dashboard',
-      icon: Home,
-      label: 'Dashboard',
-      isActive: pathname === '/dashboard'
-    },
-    {
-      href: '/image-generation',
-      icon: ImageIcon,
-      label: 'Generate Image',
-      isActive: pathname === '/image-generation'
-    },
-    {
-      href: '/models',
-      icon: Brain,
-      label: 'My Models',
-      isActive: pathname === '/models'
-    },
-    {
-      href: '/model-training',
-      icon: Palette,
-      label: 'Train Model',
-      isActive: pathname === '/model-training'
-    },
-    {
-      href: '/gallery',
-      icon: Images,
-      label: 'My Images',
-      isActive: pathname === '/gallery'
-    },
-    {
-      href: '/billing',
-      icon: CreditCard,
-      label: 'Billing',
-      isActive: pathname === '/billing'
-    }
-  ]
+  const navigationItemsWithActive = navigationItems.map(item => ({
+    ...item,
+    isActive: pathname === item.href
+  }))
 
   return (
     <TooltipProvider>
@@ -98,7 +58,7 @@ export function DashboardSidebar() {
           <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navigationItems.map((item) => (
+              {navigationItemsWithActive.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -120,19 +80,21 @@ export function DashboardSidebar() {
           <SidebarGroupLabel>Settings</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <SidebarMenuButton asChild size="lg" isActive={pathname === '/settings'}>
-                      <Link href="/settings">
-                        <Settings className="h-4 w-4" />
-                        <span className="group-data-[collapsible=icon]:hidden">Settings</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Settings</TooltipContent>
-                </Tooltip>
-              </SidebarMenuItem>
+              {settingsItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <SidebarMenuButton asChild size="lg" isActive={pathname === item.href}>
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
