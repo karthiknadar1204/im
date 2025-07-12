@@ -3,6 +3,10 @@
 import Replicate from "replicate";
 import { imageGenerationSchema, type ImageGenerationFormValues } from "@/lib/schemas/image-generation";
 import { revalidatePath } from "next/cache";
+import { db } from "@/configs/db";
+import { generatedImages, users } from "@/configs/schema";
+import { eq } from "drizzle-orm";
+import { currentUser } from "@clerk/nextjs/server";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -137,6 +141,22 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
     // Log the Replicate URLs on server side
     console.log("Replicate URLs:", imageUrls);
 
+    // Store the generated image data in the database
+    const storeResult = await storeGeneratedImage({
+      model: values.model,
+      prompt: values.prompt,
+      guidance: values.promptGuidance,
+      numInferenceSteps: values.numInferenceSteps,
+      outputFormat: values.outputFormat,
+      aspectRatio: values.aspectRatio,
+      imageUrls: imageUrls,
+    });
+
+    if (!storeResult.success) {
+      console.error("Failed to store image data:", storeResult.error);
+      // Still return success for image generation, but log the storage error
+    }
+
     // Revalidate the dashboard page to show new images
     revalidatePath("/dashboard/gallery");
 
@@ -159,5 +179,63 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
       success: false,
       error: "An unexpected error occurred",
     };
+  }
+}
+
+export async function storeGeneratedImage({
+  model,
+  imageName,
+  prompt,
+  guidance,
+  numInferenceSteps,
+  outputFormat,
+  width,
+  height,
+  aspectRatio,
+  imageUrls,
+}: {
+  model: string;
+  imageName?: string;
+  prompt?: string;
+  guidance?: number;
+  numInferenceSteps?: number;
+  outputFormat?: string;
+  width?: number;
+  height?: number;
+  aspectRatio?: string;
+  imageUrls: string[];
+}) {
+  try {
+    // Get the current Clerk user
+    const user = await currentUser();
+    if (!user || !user.id) {
+      throw new Error("Not authenticated");
+    }
+    // Find the user's integer id in the users table
+    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUser[0]) {
+      throw new Error("User not found in database");
+    }
+    const userId = dbUser[0].id;
+
+    // Insert into generatedImages
+    const result = await db.insert(generatedImages).values({
+      userId,
+      model,
+      imageName,
+      prompt,
+      guidance,
+      numInferenceSteps,
+      outputFormat,
+      width,
+      height,
+      aspectRatio,
+      imageUrls,
+    }).returning();
+
+    return { success: true, data: result[0] };
+  } catch (error) {
+    console.error("Error storing generated image:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
