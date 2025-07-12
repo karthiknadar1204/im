@@ -1,9 +1,9 @@
-'use client'
+"use client";
 
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import * as z from "zod"
-import { Button } from "@/components/ui/button"
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
@@ -12,18 +12,24 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"
+} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Slider } from "@/components/ui/slider"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const imageGenerationSchema = z.object({
   model: z.enum(["flux-dev", "flux-schnell"], {
@@ -31,35 +37,38 @@ const imageGenerationSchema = z.object({
   }),
   promptGuidance: z.number().min(0).max(10).step(0.5),
   numOutputs: z.number().int().min(1).max(4),
-  aspectRatio: z.enum([
-    "1:1",
-    "16:9", 
-    "9:16",
-    "21:9",
-    "9:21",
-    "4:5",
-    "5:4",
-    "4:3",
-    "3:4",
-    "2:3",
-    "3:2"
-  ], {
-    required_error: "Please select an aspect ratio",
-  }),
+  aspectRatio: z.enum(
+    [
+      "1:1",
+      "16:9",
+      "9:16",
+      "21:9",
+      "9:21",
+      "4:5",
+      "5:4",
+      "4:3",
+      "3:4",
+      "2:3",
+      "3:2",
+    ],
+    {
+      required_error: "Please select an aspect ratio",
+    }
+  ),
   outputFormat: z.enum(["webp", "png", "jpg"], {
     required_error: "Please select an output format",
   }),
   numInferenceSteps: z.number().min(1).max(50).step(1),
   outputQuality: z.number().min(1).max(100).step(1),
   prompt: z.string().min(1, "Please enter a prompt"),
-})
+});
 
-type ImageGenerationFormValues = z.infer<typeof imageGenerationSchema>
+type ImageGenerationFormValues = z.infer<typeof imageGenerationSchema>;
 
 const models = [
   { value: "flux-dev", label: "Flux Dev Model" },
   { value: "flux-schnell", label: "Flux Schnell Model" },
-]
+];
 
 const aspectRatios = [
   { value: "1:1", label: "1:1 (Square)" },
@@ -73,15 +82,13 @@ const aspectRatios = [
   { value: "3:4", label: "3:4 (Portrait)" },
   { value: "2:3", label: "2:3 (Portrait)" },
   { value: "3:2", label: "3:2 (Landscape)" },
-]
+];
 
 const outputFormats = [
   { value: "webp", label: "WebP" },
   { value: "png", label: "PNG" },
   { value: "jpg", label: "JPG" },
-]
-
-
+];
 
 export function ImageGenerationForm() {
   const form = useForm<ImageGenerationFormValues>({
@@ -96,10 +103,10 @@ export function ImageGenerationForm() {
       outputQuality: 90,
       prompt: "",
     },
-  })
+  });
 
   function onSubmit(values: ImageGenerationFormValues) {
-    console.log("Form values:", values)
+    console.log("Form values:", values);
     // TODO: Handle form submission
   }
 
@@ -108,7 +115,8 @@ export function ImageGenerationForm() {
       <CardHeader>
         <CardTitle>Generate Image</CardTitle>
         <CardDescription>
-          Create stunning images with AI using advanced models and customizable parameters.
+          Create stunning images with AI using advanced models and customizable
+          parameters.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -236,14 +244,14 @@ export function ImageGenerationForm() {
               )}
             />
 
-
-
             <FormField
               control={form.control}
               name="numInferenceSteps"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Number of Inference Steps: {field.value}</FormLabel>
+                  <FormLabel>
+                    Number of Inference Steps: {field.value}
+                  </FormLabel>
                   <FormControl>
                     <Slider
                       min={1}
@@ -314,5 +322,5 @@ export function ImageGenerationForm() {
         </Form>
       </CardContent>
     </Card>
-  )
-} 
+  );
+}
