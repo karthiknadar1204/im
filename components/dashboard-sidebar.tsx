@@ -48,28 +48,28 @@ export function DashboardSidebar() {
       isActive: pathname === '/dashboard'
     },
     {
-      href: '/generate-image',
+      href: '/image-generation',
       icon: ImageIcon,
       label: 'Generate Image',
-      isActive: pathname === '/generate-image'
+      isActive: pathname === '/image-generation'
     },
     {
-      href: '/my-models',
+      href: '/models',
       icon: Brain,
       label: 'My Models',
-      isActive: pathname === '/my-models'
+      isActive: pathname === '/models'
     },
     {
-      href: '/train-model',
+      href: '/model-training',
       icon: Palette,
       label: 'Train Model',
-      isActive: pathname === '/train-model'
+      isActive: pathname === '/model-training'
     },
     {
-      href: '/my-images',
+      href: '/gallery',
       icon: Images,
       label: 'My Images',
-      isActive: pathname === '/my-images'
+      isActive: pathname === '/gallery'
     },
     {
       href: '/billing',
