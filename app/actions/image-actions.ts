@@ -5,7 +5,7 @@ import { imageGenerationSchema, type ImageGenerationFormValues } from "@/lib/sch
 import { revalidatePath } from "next/cache";
 import { db } from "@/configs/db";
 import { generatedImages, users } from "@/configs/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { currentUser } from "@clerk/nextjs/server";
 
 const replicate = new Replicate({
@@ -237,5 +237,40 @@ export async function storeGeneratedImage({
   } catch (error) {
     console.error("Error storing generated image:", error);
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
+export async function getUserImages() {
+  try {
+    // Get the current Clerk user
+    const user = await currentUser();
+    if (!user || !user.id) {
+      throw new Error("Not authenticated");
+    }
+
+    // Find the user's integer id in the users table
+    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUser[0]) {
+      throw new Error("User not found in database");
+    }
+    const userId = dbUser[0].id;
+
+    // Fetch all generated images for the user, ordered by creation date (newest first)
+    const userImages = await db
+      .select()
+      .from(generatedImages)
+      .where(eq(generatedImages.userId, userId))
+      .orderBy(desc(generatedImages.createdAt));
+
+    return { 
+      success: true, 
+      data: userImages 
+    };
+  } catch (error) {
+    console.error("Error fetching user images:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    };
   }
 }
