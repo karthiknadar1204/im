@@ -111,7 +111,7 @@ export function ImageGenerationForm() {
   }
 
   return (
-    <Card className="w-full max-w-2xl">
+    <Card className="w-full max-w-xl">
       <CardHeader>
         <CardTitle>Generate Image</CardTitle>
         <CardDescription>
@@ -121,16 +121,16 @@ export function ImageGenerationForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="model"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="w-full">
                   <FormLabel>Model</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select a model" />
                       </SelectTrigger>
                     </FormControl>
@@ -147,53 +147,53 @@ export function ImageGenerationForm() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="aspectRatio"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Aspect Ratio</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select aspect ratio" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {aspectRatios.map((ratio) => (
-                        <SelectItem key={ratio.value} value={ratio.value}>
-                          {ratio.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4 w-full">
+              <FormField
+                control={form.control}
+                name="aspectRatio"
+                render={({ field }) => (
+                  <FormItem className="w-full">
+                    <FormLabel>Aspect Ratio</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select aspect ratio" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {aspectRatios.map((ratio) => (
+                          <SelectItem key={ratio.value} value={ratio.value}>
+                            {ratio.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="numOutputs"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Number of Outputs</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={4}
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Number of images to generate (1-4)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="numOutputs"
+                render={({ field }) => (
+                  <FormItem className="w-full">
+                    <FormLabel>Number of Outputs</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={4}
+                        className="w-full"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}
@@ -303,7 +303,7 @@ export function ImageGenerationForm() {
                   <FormControl>
                     <Textarea
                       placeholder="Describe the image you want to generate..."
-                      className="min-h-[120px] resize-none"
+                      className="min-h-[80px] resize-none"
                       {...field}
                     />
                   </FormControl>

@@ -10,7 +10,7 @@ export default function ImageGenerationPage() {
         </p>
       </div>
       
-      <div className="flex justify-center">
+      <div className="flex justify-start">
         <ImageGenerationForm />
       </div>
     </div>
