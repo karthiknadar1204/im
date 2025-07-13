@@ -27,6 +27,9 @@ export function Gallery() {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackStates, setFallbackStates] = useState<Record<string, boolean>>({});
+  const [imageErrors, setImageErrors] = useState<Record<string, string | null>>({});
+  const [useDirectImages, setUseDirectImages] = useState(true); // Start with direct img tags
 
   useEffect(() => {
     const fetchImages = async () => {
@@ -57,6 +60,26 @@ export function Gallery() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const setFallbackState = (imageId: number, index: number, useFallback: boolean) => {
+    const key = `${imageId}-${index}`;
+    setFallbackStates(prev => ({ ...prev, [key]: useFallback }));
+  };
+
+  const setImageError = (imageId: number, index: number, error: string | null) => {
+    const key = `${imageId}-${index}`;
+    setImageErrors(prev => ({ ...prev, [key]: error }));
+  };
+
+  const getFallbackState = (imageId: number, index: number) => {
+    const key = `${imageId}-${index}`;
+    return fallbackStates[key] || false;
+  };
+
+  const getImageError = (imageId: number, index: number) => {
+    const key = `${imageId}-${index}`;
+    return imageErrors[key] || null;
   };
 
   if (loading) {
@@ -120,6 +143,7 @@ export function Gallery() {
         <CardTitle>My Images ({images.length})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+        
         {images.map((image) => (
           <Card key={image.id} className="overflow-hidden">
             <CardContent className="p-6">
@@ -167,33 +191,58 @@ export function Gallery() {
               {/* Images Grid */}
               {image.imageUrls && image.imageUrls.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {image.imageUrls.map((url, index) => (
-                    <div key={index} className="relative group">
-                      <div className="aspect-square relative overflow-hidden rounded-lg border bg-muted">
-                        <img
-                          src={url}
-                          alt={`Generated image ${index + 1}`}
-                          className="w-full h-full object-cover"
-                          crossOrigin="anonymous"
-                          onError={(e) => {
-                            console.error('Image failed to load:', url);
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                            onClick={() => downloadImage(url, `generated-image-${image.id}-${index + 1}.${image.outputFormat}`)}
-                          >
-                            <Download className="h-4 w-4 mr-1" />
-                            Download
-                          </Button>
+                  {image.imageUrls.map((url, index) => {
+                    const useFallback = getFallbackState(image.id, index);
+                    const imageError = getImageError(image.id, index);
+                    
+                    return (
+                      <div key={index} className="relative group">
+                        <div className="aspect-square relative overflow-hidden rounded-lg border bg-muted">
+                          <img
+                            src={url}
+                            alt={`Generated image ${index + 1}`}
+                            className="w-full h-full object-cover"
+                            style={{ 
+                              display: 'block',
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              position: 'relative',
+                              zIndex: 1
+                            }}
+                            onError={(e) => {
+                              console.error('Image failed to load:', url);
+                              setImageError(image.id, index, 'Image failed to load');
+                            }}
+                            onLoad={(e) => {
+                              console.log('Image loaded successfully:', url);
+                              setImageError(image.id, index, null);
+                            }}
+                          />
+                          
+                          {/* Show error message if image failed */}
+                          {imageError && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-red-50 text-red-600 text-sm p-2 text-center">
+                              <p>Failed to load image</p>
+                            </div>
+                          )}
+                          
+                          {/* Download button overlay */}
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                              onClick={() => downloadImage(url, `generated-image-${image.id}-${index + 1}.${image.outputFormat}`)}
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              Download
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

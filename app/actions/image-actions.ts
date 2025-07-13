@@ -7,6 +7,7 @@ import { db } from "@/configs/db";
 import { generatedImages, users } from "@/configs/schema";
 import { eq, desc } from "drizzle-orm";
 import { currentUser } from "@clerk/nextjs/server";
+import { validateReplicateUrl } from "@/lib/utils";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -62,7 +63,9 @@ export async function generateImage(formData: FormData) {
         if (item && typeof item.url === 'function') {
           const url = item.url();
           // Convert URL object to string if needed
-          return typeof url === 'string' ? url : url.toString();
+          const urlString = typeof url === 'string' ? url : url.toString();
+          // Validate and potentially fix the URL
+          return validateReplicateUrl(urlString);
         }
         return null;
       }).filter(Boolean) as string[];
@@ -132,7 +135,9 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
         if (item && typeof item.url === 'function') {
           const url = item.url();
           // Convert URL object to string if needed
-          return typeof url === 'string' ? url : url.toString();
+          const urlString = typeof url === 'string' ? url : url.toString();
+          // Validate and potentially fix the URL
+          return validateReplicateUrl(urlString);
         }
         return null;
       }).filter(Boolean) as string[];

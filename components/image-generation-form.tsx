@@ -97,6 +97,7 @@ export function ImageGenerationForm() {
       const result = await generateImageFromValues(values);
       
       if (result.success && result.data) {
+        console.log('Generated URLs:', result.data);
         // Update the existing entry with the generated URLs and completed status
         updateImage(tempId, {
           urls: result.data,

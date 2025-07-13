@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { useImageStore, type GeneratedImage } from "@/lib/store/image-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,31 @@ import { formatDistanceToNow } from "date-fns";
 
 export function GeneratedImages() {
   const { images, removeImage } = useImageStore();
+  const [fallbackStates, setFallbackStates] = useState<Record<string, boolean>>({});
+  const [imageErrors, setImageErrors] = useState<Record<string, string | null>>({});
+  
+  // Debug: Log images when they change
+  console.log('Current images in store:', images);
+
+  const setFallbackState = (imageId: string, index: number, useFallback: boolean) => {
+    const key = `${imageId}-${index}`;
+    setFallbackStates(prev => ({ ...prev, [key]: useFallback }));
+  };
+
+  const setImageError = (imageId: string, index: number, error: string | null) => {
+    const key = `${imageId}-${index}`;
+    setImageErrors(prev => ({ ...prev, [key]: error }));
+  };
+
+  const getFallbackState = (imageId: string, index: number) => {
+    const key = `${imageId}-${index}`;
+    return fallbackStates[key] || false;
+  };
+
+  const getImageError = (imageId: string, index: number) => {
+    const key = `${imageId}-${index}`;
+    return imageErrors[key] || null;
+  };
 
   if (images.length === 0) {
     return (
@@ -117,31 +143,58 @@ export function GeneratedImages() {
 
               {image.status === 'completed' && image.urls.length > 0 && (
                 <div className="grid grid-cols-1 gap-2">
-                  {image.urls.map((url, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={url}
-                        alt={`Generated image ${index + 1}`}
-                        className="w-full h-auto rounded-lg border"
-                        crossOrigin="anonymous"
-                        onError={(e) => {
-                          console.error('Image failed to load:', url);
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                          onClick={() => downloadImage(url, `generated-image-${index + 1}.${image.parameters.outputFormat}`)}
-                        >
-                          <Download className="h-4 w-4 mr-1" />
-                          Download
-                        </Button>
+                  {image.urls.map((url, index) => {
+                    const useFallback = getFallbackState(image.id, index);
+                    const imageError = getImageError(image.id, index);
+                    
+                    return (
+                      <div key={index} className="relative group">
+                        <div className="relative w-full h-auto rounded-lg border overflow-hidden">
+                          <img
+                            src={url}
+                            alt={`Generated image ${index + 1}`}
+                            className="w-full h-auto rounded-lg"
+                            style={{ 
+                              display: 'block',
+                              width: '100%',
+                              height: 'auto',
+                              objectFit: 'cover',
+                              position: 'relative',
+                              zIndex: 1
+                            }}
+                            onLoad={() => {
+                              console.log('Image loaded successfully:', url);
+                              setImageError(image.id, index, null);
+                            }}
+                            onError={(e) => {
+                              console.error('Image failed to load:', url);
+                              setImageError(image.id, index, 'Image failed to load');
+                            }}
+                          />
+                          
+                          {/* Show error message if image failed */}
+                          {imageError && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-red-50 text-red-600 text-sm p-2 text-center">
+                              <p>Failed to load image</p>
+                            </div>
+                          )}
+                          
+                          {/* Download button overlay */}
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                              onClick={() => downloadImage(url, `generated-image-${index + 1}.${image.parameters.outputFormat}`)}
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              Download
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

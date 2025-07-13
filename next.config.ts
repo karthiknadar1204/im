@@ -11,31 +11,16 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'pbxt.replicate.delivery',
       },
-      {
-        protocol: 'https',
-        hostname: '*.replicate.delivery',
-      },
     ],
+    // Temporarily disable image optimization to test
+    unoptimized: true,
+    // Add proper content security policy for images
     dangerouslyAllowSVG: true,
-    contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'Cross-Origin-Embedder-Policy',
-            value: 'unsafe-none',
-          },
-          {
-            key: 'Cross-Origin-Opener-Policy',
-            value: 'unsafe-none',
-          },
-        ],
-      },
-    ];
+  // Add experimental features for better image handling
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
   },
 };
 
