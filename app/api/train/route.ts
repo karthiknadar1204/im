@@ -5,6 +5,7 @@ import { users, modelTraining } from '@/configs/schema';
 import { eq } from 'drizzle-orm';
 import { PutObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import Replicate from "replicate";
 
 const r2=new S3Client({
     region:"auto",
@@ -14,6 +15,10 @@ const r2=new S3Client({
         secretAccessKey:process.env.SECRET_ACCESS_KEY
     }
 })
+
+const replicate = new Replicate({
+    auth: process.env.REPLICATE_API_TOKEN,
+  });
 
 
 export async function POST(request: NextRequest) {
@@ -90,6 +95,43 @@ export async function POST(request: NextRequest) {
     });
     
     const signedUrl = await getSignedUrl(r2, getObjectCommand, { expiresIn: 3600 });
+
+    // const hardware=await replicate.hardware.list()
+
+    // console.log(hardware)
+    //  { sku: 'gpu-a100-large', name: 'Nvidia A100 (80GB) GPU' }->our hardware to run model on
+
+    // Generate model ID using user ID, model name, and date
+    const timestamp = Date.now();
+    const dateStr = new Date(timestamp).toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD format
+    const modelNameSlug = modelName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const modelId = `model_${dbUser[0].id}_${modelNameSlug}_${dateStr}`;
+
+    // creating the model
+    await replicate.models.create("karthiknadar1204",modelId,{
+        visibility:"private",
+        hardware:"gpu-a100-large",
+
+    })
+
+    //training the created model
+    const training = await replicate.trainings.create(
+        "ostris",
+        "flux-dev-lora-trainer",
+        "26dce37af90b9d997eeb970d92e47de3064d46c300504ae376c75bef6a9022d2",
+        {
+          // You need to create a model on Replicate that will be the destination for the trained version.
+          destination: `karthiknadar1204/${modelId}`,
+          input: {
+            steps: 1000,
+            resolution: "1024",
+            input_images: signedUrl,
+            trigger_word: "omgx",
+          }
+        }
+      );
+
+      console.log(training)
     
     // Store training data in database
     const [trainingRecord] = await db.insert(modelTraining).values({
@@ -99,6 +141,7 @@ export async function POST(request: NextRequest) {
       trainingDataUrl: `${process.env.CLOUDFLARE_ENDPOINT}/${process.env.CLOUDFLARE_BUCKET}/${r2Key}`,
       status: 'pending',
       trainingJobId,
+      modelId,
       trainingProgress: 0,
     }).returning();
 
@@ -107,6 +150,8 @@ export async function POST(request: NextRequest) {
     // 1. Calling a machine learning service (e.g., Replicate, Hugging Face)
     // 2. Starting the training process
     // 3. Updating the training status in the database
+
+
     
     return NextResponse.json({
       success: true,
@@ -117,6 +162,7 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       userId: dbUser[0].id,
       trainingId: trainingRecord.id,
+      modelId,
       signedUrl,
       r2Key
     });
