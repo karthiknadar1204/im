@@ -14,7 +14,15 @@ export async function POST(request: NextRequest) {
             replicateVersion: body.version,
             error: body.error
         });
+        
+        // Log the full output structure for debugging
+        if (body.output) {
+            console.log("Full output structure:", JSON.stringify(body.output, null, 2));
+        }
         console.log(body.version)
+        console.log(request.nextUrl.searchParams.get("userId"))
+        console.log(request.nextUrl.searchParams.get("modelId"))
+        console.log(request.nextUrl.searchParams.get("fileName"))
 
         // Extract relevant data from the webhook payload
         const {
@@ -53,13 +61,10 @@ export async function POST(request: NextRequest) {
             case 'starting':
                 updateData.status = 'training';
                 updateData.trainingProgress = 5; // Starting progress
-                // Store version and modelId only when training starts
-                if (replicateVersion) {
-                    updateData.version = replicateVersion;
-                }
-                // The trainingJobId is actually the modelId
+                // Don't store the training model version - we'll get the final version when training completes
+                // Store the trainingJobId temporarily, but we'll update it with the final modelId when training completes
                 updateData.modelId = trainingJobId;
-                console.log(`Training ${trainingJobId} started with version: ${replicateVersion}`);
+                console.log(`Training ${trainingJobId} started`);
                 break;
 
             case 'processing':
@@ -79,6 +84,40 @@ export async function POST(request: NextRequest) {
                 updateData.status = 'completed';
                 updateData.trainingProgress = 100;
                 updateData.completedAt = completed_at ? new Date(completed_at) : new Date();
+                
+                // Extract the final trained model information from output
+                if (output) {
+                    console.log('Training output:', output);
+                    
+                    if (output && typeof output === 'object' && output.version) {
+                        // The output.version contains the full model reference: "owner/model:version"
+                        const versionString = output.version;
+                        console.log('Version string from output:', versionString);
+                        
+                        // Parse the version string: "karthiknadar1204/model_1_vffddb_20250713:043b56fe34c8ee70a22e11e7874dbb9e6785e9880841a7e99fd0a5bbf59ee883"
+                        if (versionString.includes(':')) {
+                            const [modelRef, finalVersion] = versionString.split(':');
+                            const modelParts = modelRef.split('/');
+                            const finalModelId = modelParts[modelParts.length - 1]; // Get the last part as modelId
+                            
+                            updateData.modelId = finalModelId;
+                            updateData.version = finalVersion;
+                            console.log(`Training completed! Final model: ${finalModelId}:${finalVersion}`);
+                            console.log(`Full model reference: ${versionString}`);
+                        }
+                    } else if (typeof output === 'string' && output.includes('replicate.com')) {
+                        // Fallback: If output is a URL, extract model info from it
+                        const urlParts = output.split('/');
+                        const modelOwner = urlParts[urlParts.length - 3];
+                        const finalModelId = urlParts[urlParts.length - 2];
+                        const finalVersion = urlParts[urlParts.length - 1];
+                        
+                        updateData.modelId = finalModelId;
+                        updateData.version = finalVersion;
+                        console.log(`Training completed! Final model: ${modelOwner}/${finalModelId}:${finalVersion}`);
+                    }
+                }
+                
                 console.log(`Training ${trainingJobId} completed successfully!`);
                 break;
 
@@ -110,6 +149,8 @@ export async function POST(request: NextRequest) {
             progress: updateData.trainingProgress,
             completedAt: updateData.completedAt,
             errorMessage: updateData.errorMessage,
+            modelId: updateData.modelId,
+            version: updateData.version,
         });
 
         return NextResponse.json({

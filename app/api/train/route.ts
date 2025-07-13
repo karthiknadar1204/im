@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
             input_images: signedUrl,
             trigger_word: "omgx",
           },
-          webhook:`${WEBHOOK_URL}/api/webhook/training`,
+          webhook:`${WEBHOOK_URL}/api/webhook/training?userId=${dbUser[0].id}&modelId=${modelId}&fileName=${trainingData.name}`,
           webhook_events_filter: ["completed"], // optional
         }
       );
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       trainingJobId,
       modelId,
       trainingProgress: 0,
-      version:training.version,
+      // Don't store the training model version - we'll get the final version from the webhook when training completes
     }).returning();
 
     // TODO: Implement actual model training logic here
