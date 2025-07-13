@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -24,8 +24,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Upload, Info } from "lucide-react";
+import { Upload, Info, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "sonner";
 
 const ACCEPTED_ZIP_FILES = ["application/x-zip-compressed", "application/zip"];
 const MAX_FILE_SIZE = 1024 * 1024 * 45; // 45MB
@@ -42,6 +43,8 @@ const formSchema = z.object({
 type ModelTrainingFormValues = z.infer<typeof formSchema>;
 
 const ModelTrainingForm = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  
   const form = useForm<ModelTrainingFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -51,9 +54,44 @@ const ModelTrainingForm = () => {
     },
   });
 
-  const onSubmit = (values: ModelTrainingFormValues) => {
-    console.log("Form values:", values);
-    // TODO: Implement model training logic
+  const onSubmit = async (values: ModelTrainingFormValues) => {
+    try {
+      setIsLoading(true);
+      
+      // Create FormData for the API call
+      const formData = new FormData();
+      formData.append('modelName', values.modelName);
+      formData.append('gender', values.gender);
+      formData.append('trainingData', values.zipFile[0]);
+      
+      // Call the train API endpoint
+      const response = await fetch('/api/train', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to start model training');
+      }
+      
+      // Success
+      toast.success('Model training started successfully!', {
+        description: `Training job ID: ${result.trainingJobId}`,
+      });
+      
+      // Reset form
+      form.reset();
+      
+    } catch (error) {
+      console.error('Error starting model training:', error);
+      toast.error('Failed to start model training', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -218,8 +256,15 @@ const ModelTrainingForm = () => {
               </div>
 
               {/* Submit Button */}
-              <Button type="submit" className="w-full">
-                Start Model Training
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Starting Training...
+                  </>
+                ) : (
+                  'Start Model Training'
+                )}
               </Button>
             </form>
           </Form>
