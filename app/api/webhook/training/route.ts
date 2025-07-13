@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
             completed_at,
             error,
             output,
-            logs
+            logs,
+            metrics
         } = body;
 
         // Find the training record by trainingJobId
@@ -38,38 +39,49 @@ export async function POST(request: NextRequest) {
             updatedAt: new Date(),
         };
 
-        // Handle different statuses
+        // Handle the three main states
         switch (status) {
+            case 'starting':
             case 'processing':
                 updateData.status = 'training';
-                updateData.trainingProgress = 50; // Mid-point during training
+                // Calculate progress based on metrics if available
+                if (metrics && metrics.step) {
+                    const totalSteps = trainingRecord.input?.steps || 1000;
+                    const currentStep = metrics.step;
+                    updateData.trainingProgress = Math.min(Math.round((currentStep / totalSteps) * 100), 95);
+                } else {
+                    updateData.trainingProgress = 50; // Default mid-point
+                }
+                console.log(`Training ${trainingJobId} is in progress... Progress: ${updateData.trainingProgress}%`);
                 break;
 
             case 'succeeded':
                 updateData.status = 'completed';
                 updateData.trainingProgress = 100;
                 updateData.completedAt = completed_at ? new Date(completed_at) : new Date();
-                // If there's output data, you might want to store it
                 if (output) {
                     console.log("Training completed successfully with output:", output);
+                    // You might want to store the output model URL or other data
+                    if (output.model) {
+                        updateData.modelId = output.model;
+                    }
                 }
+                console.log(`Training ${trainingJobId} completed successfully!`);
                 break;
 
             case 'failed':
-                updateData.status = 'failed';
-                updateData.errorMessage = error || logs || 'Training failed';
-                updateData.completedAt = new Date();
-                break;
-
             case 'canceled':
                 updateData.status = 'failed';
-                updateData.errorMessage = 'Training was canceled';
+                updateData.trainingProgress = 0;
+                updateData.errorMessage = error || logs || 'Training failed';
                 updateData.completedAt = new Date();
+                console.error(`Training ${trainingJobId} failed:`, updateData.errorMessage);
                 break;
 
             default:
-                // For other statuses like 'starting', 'pending', etc.
+                // For any other statuses, keep as is
                 updateData.status = status;
+                console.log(`Training ${trainingJobId} status: ${status}`);
                 break;
         }
 
@@ -80,13 +92,19 @@ export async function POST(request: NextRequest) {
             .where(eq(modelTraining.trainingJobId, trainingJobId))
             .returning();
 
-        console.log(`Updated training record for job ${trainingJobId} with status: ${status}`);
+        console.log(`✅ Updated training record for job ${trainingJobId}:`, {
+            status: updateData.status,
+            progress: updateData.trainingProgress,
+            completedAt: updateData.completedAt,
+            errorMessage: updateData.errorMessage
+        });
 
         return NextResponse.json({
             message: "Webhook processed successfully",
             status: 200,
             trainingJobId,
-            updatedStatus: status
+            updatedStatus: updateData.status,
+            progress: updateData.trainingProgress
         });
 
     } catch (error) {
