@@ -1,11 +1,108 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/configs/db";
-import { modelTraining } from "@/configs/schema";
+import { modelTraining, users } from "@/configs/schema";
 import { eq } from "drizzle-orm";
+import crypto from "crypto";
+import { currentUser } from "@clerk/nextjs/server";
+
+// Your webhook secret from Replicate
+const WEBHOOK_SECRET = process.env.REPLICATE_WEBHOOK_SECRET;
+// Maximum age of webhook to accept (5 minutes)
+const MAX_DIFF_IN_SECONDS = 5 * 60;
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        // Check if webhook secret is configured
+        if (!WEBHOOK_SECRET) {
+            console.error("REPLICATE_WEBHOOK_SECRET environment variable is not set");
+            return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });
+        }
+
+        // Get webhook headers
+        const webhookId = request.headers.get('webhook-id');
+        const webhookTimestamp = request.headers.get('webhook-timestamp');
+        const webhookSignatures = request.headers.get('webhook-signature');
+
+        // Validate required headers
+        if (!webhookId || !webhookTimestamp || !webhookSignatures) {
+            console.error("Missing required webhook headers:", { webhookId, webhookTimestamp, webhookSignatures });
+            return NextResponse.json({ error: "Missing required headers" }, { status: 400 });
+        }
+
+        // Validate timestamp
+        const timestamp = parseInt(webhookTimestamp);
+        const now = Math.floor(Date.now() / 1000);
+        const diff = Math.abs(now - timestamp);
+
+        if (diff > MAX_DIFF_IN_SECONDS) {
+            console.error(`Webhook timestamp is too old: ${diff} seconds`);
+            return NextResponse.json({
+                error: `Webhook timestamp is too old: ${diff} seconds`
+            }, { status: 400 });
+        }
+
+        // Get raw request body as string
+        const bodyText = await request.text();
+        
+        // Construct the signed content
+        const signedContent = `${webhookId}.${webhookTimestamp}.${bodyText}`;
+        console.log('Signed content length:', signedContent.length);
+        console.log('Signed content preview:', signedContent.substring(0, 100) + '...');
+        console.log('Webhook ID:', webhookId);
+        console.log('Timestamp:', webhookTimestamp);
+
+        // Use the webhook secret directly for HMAC computation
+        console.log('Using webhook secret:', WEBHOOK_SECRET.substring(0, 10) + '...');
+
+        const secretBytes=new Buffer(WEBHOOK_SECRET.split('_')[1], "base64");
+
+        // Calculate the HMAC signature
+        const computedSignature = crypto
+            .createHmac('sha256', secretBytes)
+            .update(signedContent)
+            .digest('base64');
+        console.log('Computed signature:', computedSignature);
+
+        // Parse the webhook signatures
+        console.log('Raw webhook signatures header:', webhookSignatures);
+        
+        // Parse the webhook signatures according to official docs
+        // Format: "v1,<signature>" or "v1 <signature>"
+        const expectedSignatures = webhookSignatures
+            .split(/[,\s]/)  // Split by comma or space
+            .filter(sig => sig !== 'v1' && sig.length > 0)  // Remove 'v1' and empty strings
+            .map(sig => sig.trim());  // Trim whitespace
+        
+        console.log('Parsed expected signatures:', expectedSignatures);
+
+        // Use constant-time comparison to prevent timing attacks
+        const isValid = expectedSignatures.length > 0 && expectedSignatures.some(expectedSig => {
+            try {
+                console.log('Comparing signatures:');
+                console.log('  Expected:', expectedSig);
+                console.log('  Computed:', computedSignature);
+                console.log('  Expected length:', expectedSig.length);
+                console.log('  Computed length:', computedSignature.length);
+                
+                return crypto.timingSafeEqual(
+                    Buffer.from(expectedSig),
+                    Buffer.from(computedSignature)
+                );
+            } catch (error) {
+                console.error('Error comparing signatures:', error);
+                return false;
+            }
+        });
+
+        if (!isValid) {
+            console.error("Invalid webhook signature");
+            return NextResponse.json({ error: "Invalid webhook signature" }, { status: 403 });
+        }
+
+        // Parse and process the webhook
+        const body = JSON.parse(bodyText);
+        console.log(`Processing verified webhook for prediction: ${body.id}`);
+        
         console.log("webhook received", body);
         console.log("Extracted data:", {
             trainingJobId: body.id,
@@ -84,6 +181,19 @@ export async function POST(request: NextRequest) {
                 updateData.status = 'completed';
                 updateData.trainingProgress = 100;
                 updateData.completedAt = completed_at ? new Date(completed_at) : new Date();
+                
+                // Get user email from Clerk
+                try {
+                    const user = await currentUser();
+                    if (user && user.emailAddresses && user.emailAddresses.length > 0) {
+                        const userEmail = user.emailAddresses[0].emailAddress;
+                        console.log(`Training completed for user: ${userEmail}`);
+                    } else {
+                        console.log('Could not get user email from Clerk');
+                    }
+                } catch (error) {
+                    console.error('Error getting user email from Clerk:', error);
+                }
                 
                 // Extract the final trained model information from output
                 if (output) {
