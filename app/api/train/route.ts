@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/configs/db';
-import { users } from '@/configs/schema';
+import { users, modelTraining } from '@/configs/schema';
 import { eq } from 'drizzle-orm';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const r2=new S3Client({
     region:"auto",
@@ -63,9 +64,10 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     
     // Upload to Cloudflare R2
+    const r2Key = `training-data/${Date.now()}-${trainingData.name}`;
     const command = new PutObjectCommand({
       Bucket: process.env.CLOUDFLARE_BUCKET,
-      Key: `training-data/${Date.now()}-${trainingData.name}`,
+      Key: r2Key,
       Body: buffer,
       ContentType: trainingData.type,
     });
@@ -77,16 +79,34 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Generate training job ID
+    const trainingJobId = `train_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    // Generate signed URL for the uploaded file (valid for 1 hour)
+    const getObjectCommand = new GetObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET,
+      Key: r2Key,
+    });
+    
+    const signedUrl = await getSignedUrl(r2, getObjectCommand, { expiresIn: 3600 });
+    
+    // Store training data in database
+    const [trainingRecord] = await db.insert(modelTraining).values({
+      userId: dbUser[0].id,
+      modelName,
+      gender,
+      trainingDataUrl: `${process.env.CLOUDFLARE_ENDPOINT}/${process.env.CLOUDFLARE_BUCKET}/${r2Key}`,
+      status: 'pending',
+      trainingJobId,
+      trainingProgress: 0,
+    }).returning();
+
     // TODO: Implement actual model training logic here
     // This could involve:
-    // 1. Uploading the ZIP file to cloud storage
-    // 2. Calling a machine learning service (e.g., Replicate, Hugging Face)
-    // 3. Starting the training process
-    // 4. Returning a training job ID
-    
-    // For now, return a mock response
-    const trainingJobId = `train_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // 1. Calling a machine learning service (e.g., Replicate, Hugging Face)
+    // 2. Starting the training process
+    // 3. Updating the training status in the database
     
     return NextResponse.json({
       success: true,
@@ -95,7 +115,10 @@ export async function POST(request: NextRequest) {
       modelName,
       gender,
       status: 'pending',
-      userId: dbUser[0].id
+      userId: dbUser[0].id,
+      trainingId: trainingRecord.id,
+      signedUrl,
+      r2Key
     });
     
   } catch (error) {
