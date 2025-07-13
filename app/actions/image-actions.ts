@@ -117,9 +117,15 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
     };
 
     // Map form model to Replicate model name
-    const replicateModel = values.model === "flux-dev" 
-      ? "black-forest-labs/flux-dev" 
-      : "black-forest-labs/flux-schnell";
+    let replicateModel = "";
+    if (values.model === "flux-dev") {
+      replicateModel = "black-forest-labs/flux-dev";
+    } else if (values.model === "flux-schnell") {
+      replicateModel = "black-forest-labs/flux-schnell";
+    } else {
+      replicateModel = values.model; // Use the custom model string directly
+      console.log("Custom model prompt:", values.prompt);
+    }
 
     // Run the image generation
     const output = await replicate.run(replicateModel, { 

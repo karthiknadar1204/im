@@ -1,9 +1,7 @@
 import * as z from "zod"
 
 export const imageGenerationSchema = z.object({
-  model: z.enum(["flux-dev", "flux-schnell"], {
-    required_error: "Please select a model",
-  }),
+  model: z.string().min(1, "Please select a model"),
   promptGuidance: z.number().min(0).max(10).step(0.5),
   numOutputs: z.number().int().min(1).max(4),
   aspectRatio: z.enum(
@@ -43,6 +41,14 @@ export const imageGenerationSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "Flux Schnell model requires 1-4 inference steps",
+      path: ["numInferenceSteps"],
+    });
+  }
+  // For custom models, use default inference steps validation (1-50)
+  if (!["flux-dev", "flux-schnell"].includes(data.model) && (data.numInferenceSteps < 1 || data.numInferenceSteps > 50)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Custom models require 1-50 inference steps",
       path: ["numInferenceSteps"],
     });
   }

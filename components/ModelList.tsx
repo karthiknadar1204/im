@@ -103,8 +103,13 @@ export default function ModelList() {
   };
 
   const handleUseModel = (model: Model) => {
-    // TODO: Implement model usage logic
     console.log('Using model:', model);
+    if (model.status === 'completed' && model.modelId && model.version) {
+      // Redirect to image generation with model parameters
+      window.location.href = `/image-generation?model_id=${model.modelId}:${model.version}`;
+    } else {
+      console.log('Model not ready for use:', model);
+    }
   };
 
   const handleDownloadModel = (model: Model) => {

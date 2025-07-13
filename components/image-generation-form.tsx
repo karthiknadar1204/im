@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { imageGenerationSchema, type ImageGenerationFormValues } from "@/lib/schemas/image-generation";
@@ -43,6 +43,7 @@ import {
 
 export function ImageGenerationForm() {
   const { addImage, updateImage, updateImageStatus } = useImageStore();
+  const [completedModels, setCompletedModels] = useState<Array<{ value: string; label: string }>>([]);
   
   const form = useForm<ImageGenerationFormValues>({
     resolver: zodResolver(imageGenerationSchema),
@@ -57,6 +58,29 @@ export function ImageGenerationForm() {
       prompt: "",
     },
   });
+
+  // Fetch completed models on component mount
+  useEffect(() => {
+    const fetchCompletedModels = async () => {
+      try {
+        const response = await fetch('/api/models');
+        if (response.ok) {
+          const data = await response.json();
+          const completed = data.models
+            ?.filter((model: any) => model.status === 'completed' && model.modelId && model.version)
+            ?.map((model: any) => ({
+              value: `karthiknadar1204/${model.modelId}:${model.version}`,
+              label: model.modelName
+            })) || [];
+          setCompletedModels(completed);
+        }
+      } catch (error) {
+        console.error('Error fetching completed models:', error);
+      }
+    };
+
+    fetchCompletedModels();
+  }, []);
 
   // Watch the model value to dynamically adjust inference steps
   const selectedModel = form.watch("model");
@@ -84,18 +108,21 @@ export function ImageGenerationForm() {
 
   async function onSubmit(values: ImageGenerationFormValues) {
     console.log("Form values:", values);
-    
+
+    // If custom model, update the prompt
+    let newValues = { ...values };
+    if (values.model !== "flux-dev" && values.model !== "flux-schnell") {
+      newValues.prompt = `photo of a omgx ${values.prompt}`;
+    }
     // Add a placeholder image entry with 'generating' status
     const tempId = crypto.randomUUID();
     addImage({
       urls: [],
-      parameters: values,
+      parameters: newValues,
       status: 'generating',
     }, tempId);
-    
     try {
-      const result = await generateImageFromValues(values);
-      
+      const result = await generateImageFromValues(newValues);
       if (result.success && result.data) {
         console.log('Generated URLs:', result.data);
         // Update the existing entry with the generated URLs and completed status
@@ -151,11 +178,25 @@ export function ImageGenerationForm() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      {/* Default models */}
                       {models.map((model) => (
                         <SelectItem key={model.value} value={model.value}>
                           {model.label}
                         </SelectItem>
                       ))}
+                      {/* Completed custom models */}
+                      {completedModels.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+                            Your Models
+                          </div>
+                          {completedModels.map((model) => (
+                            <SelectItem key={model.value} value={model.value}>
+                              {model.label}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                   <FormMessage />
