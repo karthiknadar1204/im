@@ -20,6 +20,7 @@ const replicate = new Replicate({
     auth: process.env.REPLICATE_API_TOKEN,
   });
 
+  const WEBHOOK_URL=process.env.WEBHOOK_URL
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,9 +86,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate training job ID
-    const trainingJobId = `train_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
     // Generate signed URL for the uploaded file (valid for 1 hour)
     const getObjectCommand = new GetObjectCommand({
       Bucket: process.env.CLOUDFLARE_BUCKET,
@@ -95,11 +93,6 @@ export async function POST(request: NextRequest) {
     });
     
     const signedUrl = await getSignedUrl(r2, getObjectCommand, { expiresIn: 3600 });
-
-    // const hardware=await replicate.hardware.list()
-
-    // console.log(hardware)
-    //  { sku: 'gpu-a100-large', name: 'Nvidia A100 (80GB) GPU' }->our hardware to run model on
 
     // Generate model ID using user ID, model name, and date
     const timestamp = Date.now();
@@ -111,7 +104,6 @@ export async function POST(request: NextRequest) {
     await replicate.models.create("karthiknadar1204",modelId,{
         visibility:"private",
         hardware:"gpu-a100-large",
-
     })
 
     //training the created model
@@ -127,19 +119,25 @@ export async function POST(request: NextRequest) {
             resolution: "1024",
             input_images: signedUrl,
             trigger_word: "omgx",
-          }
+          },
+          webhook:`${WEBHOOK_URL}/api/webhook/training`,
+          webhook_events_filter: ["completed"], // optional
         }
       );
 
-      console.log(training)
+    console.log(training)
     
-    // Store training data in database
+    // Use the actual training ID from Replicate response
+    const trainingJobId = training.id;
+    console.log(trainingJobId)
+    
+    // Store training data in database with the actual Replicate training ID
     const [trainingRecord] = await db.insert(modelTraining).values({
       userId: dbUser[0].id,
       modelName,
       gender,
       trainingDataUrl: `${process.env.CLOUDFLARE_ENDPOINT}/${process.env.CLOUDFLARE_BUCKET}/${r2Key}`,
-      status: 'pending',
+      status: training.status, // Use status from Replicate response
       trainingJobId,
       modelId,
       trainingProgress: 0,
@@ -159,7 +157,7 @@ export async function POST(request: NextRequest) {
       trainingJobId,
       modelName,
       gender,
-      status: 'pending',
+      status: training.status || 'pending', // Use actual status from Replicate
       userId: dbUser[0].id,
       trainingId: trainingRecord.id,
       modelId,
