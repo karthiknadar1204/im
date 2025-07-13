@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
       trainingJobId,
       modelId,
       trainingProgress: 0,
+      version:training.version,
     }).returning();
 
     // TODO: Implement actual model training logic here

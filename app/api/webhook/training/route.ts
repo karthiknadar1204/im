@@ -7,6 +7,14 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         console.log("webhook received", body);
+        console.log("Extracted data:", {
+            trainingJobId: body.id,
+            status: body.status,
+            output: body.output,
+            replicateVersion: body.version,
+            error: body.error
+        });
+        console.log(body.version)
 
         // Extract relevant data from the webhook payload
         const {
@@ -16,7 +24,8 @@ export async function POST(request: NextRequest) {
             error,
             output,
             logs,
-            metrics
+            metrics,
+            version: replicateVersion
         } = body;
 
         // Find the training record by trainingJobId
@@ -42,6 +51,17 @@ export async function POST(request: NextRequest) {
         // Handle the three main states
         switch (status) {
             case 'starting':
+                updateData.status = 'training';
+                updateData.trainingProgress = 5; // Starting progress
+                // Store version and modelId only when training starts
+                if (replicateVersion) {
+                    updateData.version = replicateVersion;
+                }
+                // The trainingJobId is actually the modelId
+                updateData.modelId = trainingJobId;
+                console.log(`Training ${trainingJobId} started with version: ${replicateVersion}`);
+                break;
+
             case 'processing':
                 updateData.status = 'training';
                 // Calculate progress based on metrics if available
@@ -59,13 +79,6 @@ export async function POST(request: NextRequest) {
                 updateData.status = 'completed';
                 updateData.trainingProgress = 100;
                 updateData.completedAt = completed_at ? new Date(completed_at) : new Date();
-                if (output) {
-                    console.log("Training completed successfully with output:", output);
-                    // You might want to store the output model URL or other data
-                    if (output.model) {
-                        updateData.modelId = output.model;
-                    }
-                }
                 console.log(`Training ${trainingJobId} completed successfully!`);
                 break;
 
@@ -96,7 +109,7 @@ export async function POST(request: NextRequest) {
             status: updateData.status,
             progress: updateData.trainingProgress,
             completedAt: updateData.completedAt,
-            errorMessage: updateData.errorMessage
+            errorMessage: updateData.errorMessage,
         });
 
         return NextResponse.json({

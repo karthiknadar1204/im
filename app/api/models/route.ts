@@ -21,6 +21,7 @@ export async function GET(req: NextRequest, res: NextResponse) {
                 createdAt: modelTraining.createdAt,
                 completedAt: modelTraining.completedAt,
                 modelId: modelTraining.modelId,
+                version: modelTraining.version,
                 errorMessage: modelTraining.errorMessage,
                 trainingJobId: modelTraining.trainingJobId,
                 trainingDataUrl: modelTraining.trainingDataUrl,

@@ -51,6 +51,7 @@ export const modelTraining = pgTable('model_training', {
     status: text('status').notNull().default('pending'), // 'pending' | 'training' | 'completed' | 'failed'
     trainingJobId: text('training_job_id'), // external ML service job ID
     modelId: text('model_id'), // final trained model ID
+    version: text('version'), // trained model version from Replicate
     errorMessage: text('error_message'), // for failed training
     trainingProgress: integer('training_progress').default(0), // 0-100
     createdAt: timestamp('created_at').notNull().defaultNow(),

@@ -15,6 +15,7 @@ interface Model {
   createdAt: string;
   completedAt?: string;
   modelId?: string;
+  version?: string;
   errorMessage?: string;
 }
 
@@ -112,7 +113,8 @@ export default function ModelList() {
   };
 
   const handleDeleteModel = async (modelId: number) => {
-    if (!confirm('Are you sure you want to delete this model?')) return;
+    if (!confirm('Are you sure you want to delete this model? This action cannot be undone.')) return;
+    console.log(modelId)
     
     try {
       const response = await fetch(`/api/models/${modelId}`, {
@@ -120,13 +122,16 @@ export default function ModelList() {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('Model deleted successfully:', result);
         setModels(models.filter(model => model.id !== modelId));
       } else {
-        throw new Error('Failed to delete model');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete model');
       }
     } catch (err) {
       console.error('Error deleting model:', err);
-      alert('Failed to delete model');
+      alert(err instanceof Error ? err.message : 'Failed to delete model');
     }
   };
 
@@ -268,14 +273,24 @@ export default function ModelList() {
                 )}
 
                 {/* Model Info */}
-                {model.modelId && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-500">Model ID:</span>
-                      <code className="bg-white px-2 py-1 rounded text-xs font-mono text-gray-700 border">
-                        {model.modelId}
-                      </code>
-                    </div>
+                {(model.modelId || model.version) && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                    {model.version && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500">Version:</span>
+                        <code className="bg-white px-2 py-1 rounded text-xs font-mono text-gray-700 border">
+                          {model.version}
+                        </code>
+                      </div>
+                    )}
+                    {model.modelId && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500">Model ID:</span>
+                        <code className="bg-white px-2 py-1 rounded text-xs font-mono text-gray-700 border">
+                          {model.modelId}
+                        </code>
+                      </div>
+                    )}
                   </div>
                 )}
 
