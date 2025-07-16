@@ -73,6 +73,10 @@ const ModelTrainingForm = () => {
       const result = await response.json();
       
       if (!response.ok) {
+        // Handle subscription-related errors
+        if (result.requiresUpgrade) {
+          throw new Error(`Subscription upgrade required. Current plan: ${result.currentPlan}. Please upgrade to train more models.`);
+        }
         throw new Error(result.error || 'Failed to start model training');
       }
       

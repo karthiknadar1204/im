@@ -131,8 +131,13 @@ export function ImageGenerationForm() {
           status: 'completed',
         });
       } else {
-        // Update with error status
-        updateImageStatus(tempId, 'error', result.error);
+        // Handle subscription-related errors
+        if (result.requiresUpgrade) {
+          updateImageStatus(tempId, 'error', `Subscription upgrade required. Current plan: ${result.currentPlan}. Please upgrade to generate more images.`);
+        } else {
+          // Update with error status
+          updateImageStatus(tempId, 'error', result.error);
+        }
       }
     } catch (error) {
       console.error("Error submitting form:", error);

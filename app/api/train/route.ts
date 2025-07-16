@@ -42,6 +42,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const userId = dbUser[0].id;
+
+    // Import subscription validation middleware
+    const { validateModelTraining, incrementUsage } = await import('@/lib/middleware/subscription-validation');
+    
+    // Validate subscription and usage limits before starting model training
+    const validationResult = await validateModelTraining();
+    if (!validationResult.canProceed) {
+      return NextResponse.json(
+        { 
+          error: validationResult.reason || "Subscription validation failed",
+          requiresUpgrade: true,
+          currentPlan: validationResult.subscription?.plan,
+          usage: validationResult.usage
+        },
+        { status: 403 }
+      );
+    }
+
     const formData = await request.formData();
     
     // Extract form data
@@ -144,11 +163,13 @@ export async function POST(request: NextRequest) {
       // Don't store the training model version - we'll get the final version from the webhook when training completes
     }).returning();
 
-    // TODO: Implement actual model training logic here
-    // This could involve:
-    // 1. Calling a machine learning service (e.g., Replicate, Hugging Face)
-    // 2. Starting the training process
-    // 3. Updating the training status in the database
+    // Increment usage counter after successful model training initiation
+    try {
+      await incrementUsage('train_model');
+    } catch (error) {
+      console.error("Failed to increment usage:", error);
+      // Don't fail the training initiation if usage tracking fails
+    }
 
 
     

@@ -152,6 +152,32 @@ export async function generateImage(formData: FormData) {
 // Alternative function that accepts the validated form values directly
 export async function generateImageFromValues(values: ImageGenerationFormValues) {
   try {
+    // Get user ID for subscription validation
+    const user = await currentUser();
+    if (!user || !user.id) {
+      throw new Error("Not authenticated");
+    }
+    const dbUserGen = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUserGen[0]) {
+      throw new Error("User not found in database");
+    }
+    const userIdGen = dbUserGen[0].id;
+
+    // Import subscription validation middleware
+    const { validateImageGeneration, incrementUsage } = await import('@/lib/middleware/subscription-validation');
+    
+    // Validate subscription and usage limits before generating image
+    const validationResult = await validateImageGeneration();
+    if (!validationResult.canProceed) {
+      return {
+        success: false,
+        error: validationResult.reason || "Subscription validation failed",
+        requiresUpgrade: true,
+        currentPlan: validationResult.subscription?.plan,
+        usage: validationResult.usage
+      };
+    }
+
     // Map the validated data to Replicate's expected format
     const replicateInput = {
       prompt: values.prompt,
@@ -202,22 +228,13 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
     // Log the Replicate URLs on server side
     console.log("Replicate URLs:", imageUrls);
 
-    // Get user ID for storing images
-    const user = await currentUser();
-    if (!user || !user.id) {
-      throw new Error("Not authenticated");
-    }
-    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
-    if (!dbUser[0]) {
-      throw new Error("User not found in database");
-    }
-    const userId = dbUser[0].id;
+    // Use the already retrieved user data for storing images
 
     // Download and store images to R2 to avoid expiration issues
     const permanentUrls = await Promise.all(
       imageUrls.map(async (url, index) => {
         try {
-          return await downloadAndStoreImage(url, userId, `temp-${Date.now()}`, index);
+          return await downloadAndStoreImage(url, userIdGen, `temp-${Date.now()}`, index);
         } catch (error) {
           console.error(`Failed to store image ${index} to R2:`, error);
           // Fallback to original Replicate URL if R2 storage fails
@@ -244,12 +261,20 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
       // Still return success for image generation, but log the storage error
     }
 
+    // Increment usage counter after successful image generation
+    try {
+      await incrementUsage('generate_image');
+    } catch (error) {
+      console.error("Failed to increment usage:", error);
+      // Don't fail the image generation if usage tracking fails
+    }
+
     // Revalidate the dashboard page to show new images
     revalidatePath("/dashboard/gallery");
 
     return {
       success: true,
-      data: imageUrls,
+      data: permanentUrls,
       message: "Image generated successfully",
     };
   } catch (error) {
@@ -299,15 +324,15 @@ export async function storeGeneratedImage({
       throw new Error("Not authenticated");
     }
     // Find the user's integer id in the users table
-    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
-    if (!dbUser[0]) {
+    const dbUserStore = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUserStore[0]) {
       throw new Error("User not found in database");
     }
-    const userId = dbUser[0].id;
+    const userIdStore = dbUserStore[0].id;
 
     // Insert into generatedImages
     const result = await db.insert(generatedImages).values({
-      userId,
+      userId: userIdStore,
       model,
       imageName,
       prompt,
@@ -336,17 +361,17 @@ export async function getUserImages() {
     }
 
     // Find the user's integer id in the users table
-    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
-    if (!dbUser[0]) {
+    const dbUserImages = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUserImages[0]) {
       throw new Error("User not found in database");
     }
-    const userId = dbUser[0].id;
+    const userIdImages = dbUserImages[0].id;
 
     // Fetch all generated images for the user, ordered by creation date (newest first)
     const userImages = await db
       .select()
       .from(generatedImages)
-      .where(eq(generatedImages.userId, userId))
+      .where(eq(generatedImages.userId, userIdImages))
       .orderBy(desc(generatedImages.createdAt));
 
     // Check and fix expired URLs
@@ -362,7 +387,7 @@ export async function getUserImages() {
                   const response = await fetch(url, { method: 'HEAD' });
                   if (response.ok) {
                     // URL is still valid, download and store it permanently
-                    const permanentUrl = await downloadAndStoreImage(url, userId, image.id.toString(), index);
+                    const permanentUrl = await downloadAndStoreImage(url, userIdImages, image.id.toString(), index);
                     
                     // Update the database with the permanent URL
                     await db

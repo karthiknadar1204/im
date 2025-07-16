@@ -1,11 +1,12 @@
-import { auth } from '@clerk/nextjs';
+import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/configs/db';
 import { 
   userSubscriptions, 
   usageTracking, 
-  users 
+  users,
+  subscriptionPlans
 } from '@/configs/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { 
   getCurrentBillingPeriod,
   validateUsage,
@@ -23,13 +24,62 @@ export interface SubscriptionValidationResult {
 }
 
 /**
+ * Create a free trial subscription for a new user
+ */
+async function createFreeTrialSubscription(dbUser: any) {
+  // Get the free plan
+  const freePlanResult = await db.select().from(subscriptionPlans)
+    .where(eq(subscriptionPlans.name, 'free'))
+    .limit(1);
+  const freePlan = freePlanResult[0];
+  
+  if (!freePlan) {
+    throw new Error('Free plan not found in database');
+  }
+  
+  // Create free trial subscription
+  const now = new Date();
+  const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  
+  const newSubscriptionResult = await db.insert(userSubscriptions).values({
+    userId: dbUser.id,
+    planId: freePlan.id,
+    status: 'trialing',
+    currentPeriodStart: now,
+    currentPeriodEnd: trialEnd,
+    trialStart: now,
+    trialEnd: trialEnd,
+    createdAt: now,
+    updatedAt: now
+  }).returning();
+  
+  const newSubscription = newSubscriptionResult[0];
+  
+  // Create initial usage tracking
+  await db.insert(usageTracking).values({
+    userId: dbUser.id,
+    subscriptionId: newSubscription.id,
+    periodStart: now,
+    periodEnd: trialEnd,
+    imagesGeneratedCount: 0,
+    modelsTrainedCount: 0,
+    imageGenerationLimit: freePlan.imageGenerationLimit,
+    modelTrainingLimit: freePlan.modelTrainingLimit,
+    createdAt: now,
+    updatedAt: now
+  });
+  
+  return { subscription: newSubscription, plan: freePlan };
+}
+
+/**
  * Validate if user can generate images
  */
 export async function validateImageGeneration(): Promise<SubscriptionValidationResult> {
   try {
-    const { userId } = await auth();
+    const user = await currentUser();
     
-    if (!userId) {
+    if (!user || !user.id) {
       return {
         canProceed: false,
         reason: 'User not authenticated'
@@ -37,11 +87,10 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
     }
 
     // Get user from database
-    const user = await db.query.users.findFirst({
-      where: eq(users.clerkId, userId)
-    });
+    const dbUserResult = await db.select().from(users).where(eq(users.clerkId, user.id));
+    const dbUser = dbUserResult[0];
 
-    if (!user) {
+    if (!dbUser) {
       return {
         canProceed: false,
         reason: 'User not found'
@@ -49,15 +98,29 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
     }
 
     // Get current subscription
-    const subscription = await db.query.userSubscriptions.findFirst({
-      where: eq(userSubscriptions.userId, user.id),
-      orderBy: (userSubscriptions, { desc }) => [desc(userSubscriptions.createdAt)]
-    });
+    let subscriptionResult = await db.select().from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, dbUser.id))
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    let subscription = subscriptionResult[0];
 
     if (!subscription) {
+      // Auto-create free trial subscription for new users
+      console.log('No subscription found, creating free trial subscription');
+      const { subscription: newSubscription, plan: freePlan } = await createFreeTrialSubscription(dbUser);
+      subscription = newSubscription;
+      
+      // Get usage for the newly created subscription
+      const usageResult = await db.select().from(usageTracking)
+        .where(eq(usageTracking.subscriptionId, subscription.id))
+        .limit(1);
+      const usage = usageResult[0];
+      
       return {
-        canProceed: false,
-        reason: 'No subscription found'
+        canProceed: true,
+        subscription,
+        usage,
+        remainingImages: freePlan.imageGenerationLimit
       };
     }
 
@@ -83,14 +146,15 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
     const billingPeriod = getCurrentBillingPeriod(subscription);
 
     // Get usage for current billing period
-    const usage = await db.query.usageTracking.findFirst({
-      where: and(
-        eq(usageTracking.userId, user.id),
+    const usageResult = await db.select().from(usageTracking)
+      .where(and(
+        eq(usageTracking.userId, dbUser.id),
         eq(usageTracking.subscriptionId, subscription.id),
         gte(usageTracking.periodStart, billingPeriod.start),
         lte(usageTracking.periodEnd, billingPeriod.end)
-      )
-    });
+      ))
+      .limit(1);
+    const usage = usageResult[0];
 
     if (!usage) {
       return {
@@ -99,8 +163,19 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
       };
     }
 
+    // Get the subscription plan
+    const planResult = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+    const plan = planResult[0];
+    
+    if (!plan) {
+      return {
+        canProceed: false,
+        reason: 'Subscription plan not found'
+      };
+    }
+
     // Validate usage
-    const validation = validateUsage(subscription, subscription.plan!, usage, 'generate_image');
+    const validation = validateUsage(subscription, plan, usage, 'generate_image');
 
     if (!validation.canGenerateImage) {
       return {
@@ -138,9 +213,9 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
  */
 export async function validateModelTraining(): Promise<SubscriptionValidationResult> {
   try {
-    const { userId } = await auth();
+    const user = await currentUser();
     
-    if (!userId) {
+    if (!user || !user.id) {
       return {
         canProceed: false,
         reason: 'User not authenticated'
@@ -148,11 +223,10 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
     }
 
     // Get user from database
-    const user = await db.query.users.findFirst({
-      where: eq(users.clerkId, userId)
-    });
+    const dbUserResult = await db.select().from(users).where(eq(users.clerkId, user.id));
+    const dbUser = dbUserResult[0];
 
-    if (!user) {
+    if (!dbUser) {
       return {
         canProceed: false,
         reason: 'User not found'
@@ -160,15 +234,29 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
     }
 
     // Get current subscription
-    const subscription = await db.query.userSubscriptions.findFirst({
-      where: eq(userSubscriptions.userId, user.id),
-      orderBy: (userSubscriptions, { desc }) => [desc(userSubscriptions.createdAt)]
-    });
+    let subscriptionResult = await db.select().from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, dbUser.id))
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    let subscription = subscriptionResult[0];
 
     if (!subscription) {
+      // Auto-create free trial subscription for new users
+      console.log('No subscription found, creating free trial subscription');
+      const { subscription: newSubscription, plan: freePlan } = await createFreeTrialSubscription(dbUser);
+      subscription = newSubscription;
+      
+      // Get usage for the newly created subscription
+      const usageResult = await db.select().from(usageTracking)
+        .where(eq(usageTracking.subscriptionId, subscription.id))
+        .limit(1);
+      const usage = usageResult[0];
+      
       return {
-        canProceed: false,
-        reason: 'No subscription found'
+        canProceed: true,
+        subscription,
+        usage,
+        remainingModels: freePlan.modelTrainingLimit
       };
     }
 
@@ -194,14 +282,15 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
     const billingPeriod = getCurrentBillingPeriod(subscription);
 
     // Get usage for current billing period
-    const usage = await db.query.usageTracking.findFirst({
-      where: and(
-        eq(usageTracking.userId, user.id),
+    const usageResult = await db.select().from(usageTracking)
+      .where(and(
+        eq(usageTracking.userId, dbUser.id),
         eq(usageTracking.subscriptionId, subscription.id),
         gte(usageTracking.periodStart, billingPeriod.start),
         lte(usageTracking.periodEnd, billingPeriod.end)
-      )
-    });
+      ))
+      .limit(1);
+    const usage = usageResult[0];
 
     if (!usage) {
       return {
@@ -210,8 +299,19 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
       };
     }
 
+    // Get the subscription plan
+    const planResult = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+    const plan = planResult[0];
+    
+    if (!plan) {
+      return {
+        canProceed: false,
+        reason: 'Subscription plan not found'
+      };
+    }
+
     // Validate usage
-    const validation = validateUsage(subscription, subscription.plan!, usage, 'train_model');
+    const validation = validateUsage(subscription, plan, usage, 'train_model');
 
     if (!validation.canTrainModel) {
       return {
@@ -249,26 +349,26 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
  */
 export async function incrementUsage(action: 'generate_image' | 'train_model'): Promise<boolean> {
   try {
-    const { userId } = await auth();
+    const user = await currentUser();
     
-    if (!userId) {
+    if (!user || !user.id) {
       return false;
     }
 
     // Get user from database
-    const user = await db.query.users.findFirst({
-      where: eq(users.clerkId, userId)
-    });
+    const dbUserResult = await db.select().from(users).where(eq(users.clerkId, user.id));
+    const dbUser = dbUserResult[0];
 
-    if (!user) {
+    if (!dbUser) {
       return false;
     }
 
     // Get current subscription
-    const subscription = await db.query.userSubscriptions.findFirst({
-      where: eq(userSubscriptions.userId, user.id),
-      orderBy: (userSubscriptions, { desc }) => [desc(userSubscriptions.createdAt)]
-    });
+    const subscriptionResult = await db.select().from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, dbUser.id))
+      .orderBy(desc(userSubscriptions.createdAt))
+      .limit(1);
+    const subscription = subscriptionResult[0];
 
     if (!subscription) {
       return false;
@@ -278,19 +378,20 @@ export async function incrementUsage(action: 'generate_image' | 'train_model'): 
     const billingPeriod = getCurrentBillingPeriod(subscription);
 
     // Get or create usage for current billing period
-    let usage = await db.query.usageTracking.findFirst({
-      where: and(
-        eq(usageTracking.userId, user.id),
+    let usageResult = await db.select().from(usageTracking)
+      .where(and(
+        eq(usageTracking.userId, dbUser.id),
         eq(usageTracking.subscriptionId, subscription.id),
         gte(usageTracking.periodStart, billingPeriod.start),
         lte(usageTracking.periodEnd, billingPeriod.end)
-      )
-    });
+      ))
+      .limit(1);
+    let usage = usageResult[0];
 
     if (!usage) {
       // Create new usage record for current period
       const newUsage = await db.insert(usageTracking).values({
-        userId: user.id,
+        userId: dbUser.id,
         subscriptionId: subscription.id,
         periodStart: billingPeriod.start,
         periodEnd: billingPeriod.end,
