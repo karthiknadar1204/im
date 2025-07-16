@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, Image as ImageIcon } from "lucide-react";
+import { Download, Loader2, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { getUserImages } from "@/app/actions/image-actions";
 
@@ -30,6 +30,7 @@ export function Gallery() {
   const [fallbackStates, setFallbackStates] = useState<Record<string, boolean>>({});
   const [imageErrors, setImageErrors] = useState<Record<string, string | null>>({});
   const [useDirectImages, setUseDirectImages] = useState(true); // Start with direct img tags
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     const fetchImages = async () => {
@@ -60,6 +61,35 @@ export function Gallery() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const migrateExpiredImages = async () => {
+    try {
+      setMigrating(true);
+      const response = await fetch('/api/migrate-images', {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Migration result:', result);
+        
+        // Refresh the images
+        const imagesResult = await getUserImages();
+        if (imagesResult.success && imagesResult.data) {
+          setImages(imagesResult.data);
+        }
+        
+        alert(`Migration completed! Migrated: ${result.migratedCount}, Failed: ${result.failedCount}`);
+      } else {
+        alert('Migration failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error migrating images:', error);
+      alert('Migration failed. Please try again.');
+    } finally {
+      setMigrating(false);
+    }
   };
 
   const setFallbackState = (imageId: number, index: number, useFallback: boolean) => {
@@ -140,7 +170,22 @@ export function Gallery() {
   return (
     <Card className="w-full h-full">
       <CardHeader>
-        <CardTitle>My Images ({images.length})</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>My Images ({images.length})</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={migrateExpiredImages}
+            disabled={migrating}
+          >
+            {migrating ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            {migrating ? 'Migrating...' : 'Fix Expired Images'}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
         
@@ -189,7 +234,7 @@ export function Gallery() {
               </div>
 
               {/* Images Grid */}
-              {image.imageUrls && image.imageUrls.length > 0 && (
+              {image.imageUrls && image.imageUrls.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {image.imageUrls.map((url, index) => {
                     const useFallback = getFallbackState(image.id, index);
@@ -223,7 +268,8 @@ export function Gallery() {
                           {/* Show error message if image failed */}
                           {imageError && (
                             <div className="absolute inset-0 flex items-center justify-center bg-red-50 text-red-600 text-sm p-2 text-center">
-                              <p>Failed to load image</p>
+                              <p>Image expired or unavailable</p>
+                              <p className="text-xs mt-1">This image URL has expired</p>
                             </div>
                           )}
                           
@@ -243,6 +289,13 @@ export function Gallery() {
                       </div>
                     );
                   })}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-32 bg-muted rounded-lg">
+                  <div className="text-center text-muted-foreground">
+                    <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">All images expired</p>
+                  </div>
                 </div>
               )}
             </CardContent>

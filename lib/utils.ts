@@ -23,6 +23,17 @@ export function validateReplicateUrl(url: string): string {
   }
 }
 
+// Utility function to generate R2 public URL
+export function generateR2PublicUrl(bucketName: string, key: string): string {
+  // Use Public Development URL for R2 bucket access
+  const publicDevUrl = process.env.CLOUDFLARE_PUBLIC_DEV_URL;
+  if (!publicDevUrl) {
+    throw new Error('CLOUDFLARE_PUBLIC_DEV_URL environment variable is not configured');
+  }
+  
+  return `${publicDevUrl}/${key}`;
+}
+
 // Function to check if an image URL is accessible
 export async function checkImageAccessibility(url: string): Promise<boolean> {
   try {

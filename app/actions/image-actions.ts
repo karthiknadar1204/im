@@ -7,11 +7,61 @@ import { db } from "@/configs/db";
 import { generatedImages, users } from "@/configs/schema";
 import { eq, desc } from "drizzle-orm";
 import { currentUser } from "@clerk/nextjs/server";
-import { validateReplicateUrl } from "@/lib/utils";
+import { validateReplicateUrl, generateR2PublicUrl } from "@/lib/utils";
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
+
+// Cloudflare R2 client for storing images
+const r2 = new S3Client({
+  region: "auto",
+  endpoint: process.env.CLOUDFLARE_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.ACCESS_KEY_ID!,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY!,
+  },
+});
+
+// Function to download and store image to R2
+async function downloadAndStoreImage(replicateUrl: string, userId: number, imageId: string, index: number): Promise<string> {
+  try {
+    // Download the image from Replicate
+    const response = await fetch(replicateUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.statusText}`);
+    }
+    
+    const imageBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(imageBuffer);
+    
+    // Extract file extension from URL
+    const urlParts = replicateUrl.split('.');
+    const extension = urlParts[urlParts.length - 1] || 'webp';
+    
+    // Create R2 key
+    const r2Key = `generated-images/${userId}/${imageId}/image-${index + 1}.${extension}`;
+    
+    // Upload to R2
+    const command = new PutObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET!,
+      Key: r2Key,
+      Body: buffer,
+      ContentType: response.headers.get('content-type') || `image/${extension}`,
+      CacheControl: 'public, max-age=31536000', // Cache for 1 year
+    });
+
+    await r2.send(command);
+    
+    // Return the public URL using the utility function
+    return generateR2PublicUrl(process.env.CLOUDFLARE_BUCKET!, r2Key);
+  } catch (error) {
+    console.error('Error downloading and storing image:', error);
+    // Fallback to original URL if download fails
+    return replicateUrl;
+  }
+}
 
 export async function generateImage(formData: FormData) {
   try {
@@ -152,7 +202,33 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
     // Log the Replicate URLs on server side
     console.log("Replicate URLs:", imageUrls);
 
-    // Store the generated image data in the database
+    // Get user ID for storing images
+    const user = await currentUser();
+    if (!user || !user.id) {
+      throw new Error("Not authenticated");
+    }
+    const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
+    if (!dbUser[0]) {
+      throw new Error("User not found in database");
+    }
+    const userId = dbUser[0].id;
+
+    // Download and store images to R2 to avoid expiration issues
+    const permanentUrls = await Promise.all(
+      imageUrls.map(async (url, index) => {
+        try {
+          return await downloadAndStoreImage(url, userId, `temp-${Date.now()}`, index);
+        } catch (error) {
+          console.error(`Failed to store image ${index} to R2:`, error);
+          // Fallback to original Replicate URL if R2 storage fails
+          return url;
+        }
+      })
+    );
+
+    console.log("Permanent URLs:", permanentUrls);
+
+    // Store the generated image data in the database with permanent URLs
     const storeResult = await storeGeneratedImage({
       model: values.model,
       prompt: values.prompt,
@@ -160,7 +236,7 @@ export async function generateImageFromValues(values: ImageGenerationFormValues)
       numInferenceSteps: values.numInferenceSteps,
       outputFormat: values.outputFormat,
       aspectRatio: values.aspectRatio,
-      imageUrls: imageUrls,
+      imageUrls: permanentUrls,
     });
 
     if (!storeResult.success) {
@@ -273,9 +349,55 @@ export async function getUserImages() {
       .where(eq(generatedImages.userId, userId))
       .orderBy(desc(generatedImages.createdAt));
 
+    // Check and fix expired URLs
+    const fixedImages = await Promise.all(
+      userImages.map(async (image) => {
+        if (image.imageUrls && Array.isArray(image.imageUrls)) {
+          const fixedUrls = await Promise.all(
+            image.imageUrls.map(async (url, index) => {
+              // Check if it's a Replicate URL that might be expired
+              if (url.includes('replicate.delivery')) {
+                try {
+                  // Try to access the URL
+                  const response = await fetch(url, { method: 'HEAD' });
+                  if (response.ok) {
+                    // URL is still valid, download and store it permanently
+                    const permanentUrl = await downloadAndStoreImage(url, userId, image.id.toString(), index);
+                    
+                    // Update the database with the permanent URL
+                    await db
+                      .update(generatedImages)
+                      .set({
+                        imageUrls: image.imageUrls.map((u, i) => i === index ? permanentUrl : u)
+                      })
+                      .where(eq(generatedImages.id, image.id));
+                    
+                    return permanentUrl;
+                  } else {
+                    // URL is expired, return a placeholder
+                    return null;
+                  }
+                } catch (error) {
+                  console.error('Error checking/fixing URL:', url, error);
+                  return null;
+                }
+              }
+              return url;
+            })
+          );
+          
+          return {
+            ...image,
+            imageUrls: fixedUrls.filter(Boolean)
+          };
+        }
+        return image;
+      })
+    );
+
     return { 
       success: true, 
-      data: userImages 
+      data: fixedImages 
     };
   } catch (error) {
     console.error("Error fetching user images:", error);
