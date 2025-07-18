@@ -11,8 +11,8 @@ import { eq, and, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
 // Test configuration
-const TEST_USER_EMAIL = 'test-core@example.com';
-const TEST_USER_NAME = 'Test Core User';
+const TEST_USER_EMAIL = 'karthiknadar1204@gmail.com';
+const TEST_USER_NAME = 'karthik nadar';
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // Helper function to create a test user

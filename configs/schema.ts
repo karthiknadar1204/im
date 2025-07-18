@@ -107,7 +107,15 @@ export const usageTracking = pgTable('usage_tracking', {
     modelTrainingLimit: integer('model_training_limit'), // limit for this period
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+}, (table) => ({
+    // Add unique constraint to prevent duplicate usage tracking entries
+    // for the same subscription and billing period
+    subscriptionPeriodUnique: uniqueIndex('usage_tracking_subscription_period_unique').on(
+        table.subscriptionId,
+        table.periodStart,
+        table.periodEnd
+    ),
+}));
 
 export const paymentTransactions = pgTable('payment_transactions', {
     id: serial('id').primaryKey(),

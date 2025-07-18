@@ -172,7 +172,7 @@ export function Gallery() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>My Images ({images.length})</CardTitle>
-          <Button
+          {/* <Button
             variant="outline"
             size="sm"
             onClick={migrateExpiredImages}
@@ -184,7 +184,7 @@ export function Gallery() {
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
             {migrating ? 'Migrating...' : 'Fix Expired Images'}
-          </Button>
+          </Button> */}
         </div>
       </CardHeader>
       <CardContent className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">

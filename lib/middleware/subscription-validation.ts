@@ -157,9 +157,17 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
     const usage = usageResult[0];
 
     if (!usage) {
+      // Get the subscription plan to include in error response
+      const planResult = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+      const plan = planResult[0];
+      
       return {
         canProceed: false,
-        reason: 'Usage tracking not found'
+        reason: 'Usage tracking not found',
+        subscription: {
+          ...subscription,
+          plan: plan
+        }
       };
     }
 

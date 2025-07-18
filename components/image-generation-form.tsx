@@ -222,10 +222,7 @@ export function ImageGenerationForm() {
                           <Info className="h-4 w-4 text-muted-foreground" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Select the image dimensions ratio.</p>
-                          <p><strong>Square (1:1):</strong> Perfect for social media</p>
-                          <p><strong>Landscape (16:9, 21:9):</strong> Great for wallpapers</p>
-                          <p><strong>Portrait (9:16, 4:5):</strong> Ideal for mobile screens</p>
+                          <p>Defines the width and height shape of the image (like landscape or portrait). Choose based on what kind of photo you want.</p>
                         </TooltipContent>
                       </Tooltip>
                     </FormLabel>
@@ -325,21 +322,17 @@ export function ImageGenerationForm() {
               name="promptGuidance"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center gap-2">
-                    Prompt Guidance: {field.value}
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Controls how closely the image follows your prompt.</p>
-                        <p><strong>Range:</strong> 0-10 (step 0.5)</p>
-                        <p><strong>Low (0-3):</strong> More creative, less accurate</p>
-                        <p><strong>Medium (4-7):</strong> Balanced creativity and accuracy</p>
-                        <p><strong>High (8-10):</strong> Very accurate to prompt</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </FormLabel>
+                                      <FormLabel className="flex items-center gap-2">
+                      Prompt Guidance: {field.value}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="h-4 w-4 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Controls how strictly the image follows your prompt — higher values mean more accurate but less creative results (ideal: 7–10).</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </FormLabel>
                   <FormControl>
                     <Slider
                       min={0}
@@ -363,20 +356,17 @@ export function ImageGenerationForm() {
               name="numInferenceSteps"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center gap-2">
-                    Number of Inference Steps: {field.value}
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Number of denoising steps during generation.</p>
-                        <p><strong>Flux Dev:</strong> 1-50 steps (slower, higher quality)</p>
-                        <p><strong>Flux Schnell:</strong> 1-4 steps (faster, good quality)</p>
-                        <p><strong>Current model:</strong> {selectedModel === "flux-dev" ? "Flux Dev" : "Flux Schnell"}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </FormLabel>
+                                      <FormLabel className="flex items-center gap-2">
+                      Number of Inference Steps: {field.value}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="h-4 w-4 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Determines how long the AI spends refining the image — more steps = smoother, more detailed results (ideal: 25–50).</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </FormLabel>
                   <FormControl>
                     <Slider
                       min={inferenceStepsConfig.min}
@@ -400,21 +390,17 @@ export function ImageGenerationForm() {
               name="outputQuality"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center gap-2">
-                    Output Quality: {field.value}
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Controls the quality and file size of the generated image.</p>
-                        <p><strong>Range:</strong> 1-100%</p>
-                        <p><strong>Low (1-50):</strong> Smaller files, lower quality</p>
-                        <p><strong>Medium (51-80):</strong> Good balance</p>
-                        <p><strong>High (81-100):</strong> Best quality, larger files</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </FormLabel>
+                                      <FormLabel className="flex items-center gap-2">
+                      Output Quality: {field.value}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="h-4 w-4 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Sets the image's visual clarity and detail — higher quality means better results but takes longer to generate (ideal: high).</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </FormLabel>
                   <FormControl>
                     <Slider
                       min={1}

@@ -5,55 +5,55 @@ import {
   userSubscriptions, 
   paymentTransactions, 
   users,
-  subscriptionPlans 
+  subscriptionPlans,
+  usageTracking
 } from '@/configs/schema';
-import { eq, and } from 'drizzle-orm';
-import crypto from 'crypto';
-
-// Webhook signature verification
-function verifyWebhookSignature(
-  payload: string,
-  signature: string,
-  secret: string
-): boolean {
-  try {
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload, 'utf8')
-      .digest('hex');
-    
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expectedSignature, 'hex')
-    );
-  } catch (error) {
-    console.error('Webhook signature verification failed:', error);
-    return false;
-  }
-}
+import { eq, and, gte, lte, or } from 'drizzle-orm';
+import { Webhook } from "standardwebhooks";
 
 // Process subscription events
 async function handleSubscriptionEvent(eventData: any) {
   const {
     subscription_id,
-    customer_id,
-    customer_email,
     status,
-    current_period_start,
-    current_period_end,
     product_id,
-    cancel_at_period_end = false
+    customer,
+    next_billing_date,
+    previous_billing_date,
+    cancel_at_next_billing_date,
+    metadata
   } = eventData;
 
-  console.log('Processing subscription event:', { subscription_id, status, customer_email });
+  // Extract customer information from nested customer object
+  const customer_id = customer?.customer_id;
+  const customer_email = customer?.email;
 
-  // Find the user by email
-  const user = await db.query.users.findFirst({
-    where: eq(users.email, customer_email)
-  });
+  console.log('Processing subscription event:', { subscription_id, status, customer_email, customer_id });
+
+  // Find the user - try email first, then customer_id
+  let user = null;
+  
+  if (customer_email) {
+    user = await db.query.users.findFirst({
+      where: eq(users.email, customer_email)
+    });
+  }
+  
+  // If no user found by email, try to find by customer_id from existing subscription
+  if (!user && customer_id) {
+    const existingSubscription = await db.query.userSubscriptions.findFirst({
+      where: eq(userSubscriptions.dodoCustomerId, customer_id)
+    });
+    
+    if (existingSubscription) {
+      user = await db.query.users.findFirst({
+        where: eq(users.id, existingSubscription.userId)
+      });
+    }
+  }
 
   if (!user) {
-    console.error('User not found for email:', customer_email);
+    console.error('User not found for subscription:', { customer_email, customer_id, subscription_id });
     throw new Error('User not found');
   }
 
@@ -77,30 +77,114 @@ async function handleSubscriptionEvent(eventData: any) {
     await db.update(userSubscriptions)
       .set({
         status: status,
-        currentPeriodStart: new Date(current_period_start * 1000),
-        currentPeriodEnd: new Date(current_period_end * 1000),
-        cancelAtPeriodEnd: cancel_at_period_end,
+        currentPeriodStart: new Date(previous_billing_date),
+        currentPeriodEnd: new Date(next_billing_date),
+        cancelAtPeriodEnd: cancel_at_next_billing_date || false,
         updatedAt: new Date()
       })
       .where(eq(userSubscriptions.dodoSubscriptionId, subscription_id));
 
     console.log('Updated existing subscription:', subscription_id);
-  } else {
-    // Create new subscription
-    await db.insert(userSubscriptions).values({
+    
+    // Create usage tracking for the billing period
+    const billingPeriodStart = new Date(previous_billing_date);
+    const billingPeriodEnd = new Date(next_billing_date);
+    
+    console.log('Creating usage tracking for subscription:', {
       userId: user.id,
-      planId: plan.id,
-      status: status,
-      currentPeriodStart: new Date(current_period_start * 1000),
-      currentPeriodEnd: new Date(current_period_end * 1000),
-      dodoSubscriptionId: subscription_id,
-      dodoCustomerId: customer_id,
-      cancelAtPeriodEnd: cancel_at_period_end,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      subscriptionId: existingSubscription.id,
+      billingPeriodStart: billingPeriodStart.toISOString(),
+      billingPeriodEnd: billingPeriodEnd.toISOString()
     });
+    
+    try {
+      await db.insert(usageTracking).values({
+        userId: user.id,
+        subscriptionId: existingSubscription.id,
+        periodStart: billingPeriodStart,
+        periodEnd: billingPeriodEnd,
+        imagesGeneratedCount: 0,
+        modelsTrainedCount: 0,
+        imageGenerationLimit: plan.imageGenerationLimit,
+        modelTrainingLimit: plan.modelTrainingLimit,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log('Created usage tracking for existing subscription:', subscription_id);
+    } catch (usageInsertError) {
+      // Handle case where usage tracking already exists (unique constraint violation)
+      if (usageInsertError instanceof Error && usageInsertError.message.includes('duplicate key')) {
+        console.log('Usage tracking already exists for this billing period:', subscription_id);
+      } else {
+        throw usageInsertError;
+      }
+    }
+  } else {
+    // Create new subscription - use upsert to handle race conditions
+    try {
+      const newSubscription = await db.insert(userSubscriptions).values({
+        userId: user.id,
+        planId: plan.id,
+        status: status,
+        currentPeriodStart: new Date(previous_billing_date),
+        currentPeriodEnd: new Date(next_billing_date),
+        dodoSubscriptionId: subscription_id,
+        dodoCustomerId: customer_id,
+        cancelAtPeriodEnd: cancel_at_next_billing_date || false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).returning();
 
-    console.log('Created new subscription:', subscription_id);
+      console.log('Created new subscription:', subscription_id);
+      
+      // Create usage tracking for new subscription
+      const billingPeriodStart = new Date(previous_billing_date);
+      const billingPeriodEnd = new Date(next_billing_date);
+      
+      try {
+        await db.insert(usageTracking).values({
+          userId: user.id,
+          subscriptionId: newSubscription[0].id,
+          periodStart: billingPeriodStart,
+          periodEnd: billingPeriodEnd,
+          imagesGeneratedCount: 0,
+          modelsTrainedCount: 0,
+          imageGenerationLimit: plan.imageGenerationLimit,
+          modelTrainingLimit: plan.modelTrainingLimit,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        
+        console.log('Created usage tracking for new subscription:', subscription_id);
+      } catch (usageInsertError) {
+        // Handle case where usage tracking already exists (unique constraint violation)
+        if (usageInsertError instanceof Error && usageInsertError.message.includes('duplicate key')) {
+          console.log('Usage tracking already exists for this billing period:', subscription_id);
+        } else {
+          throw usageInsertError;
+        }
+      }
+    } catch (insertError) {
+      // Handle case where subscription was created by another concurrent webhook
+      if (insertError instanceof Error && insertError.message.includes('duplicate key')) {
+        console.log('Subscription already exists (concurrent insert), updating instead:', subscription_id);
+        
+        // Update the existing subscription
+        await db.update(userSubscriptions)
+          .set({
+            status: status,
+            currentPeriodStart: new Date(previous_billing_date),
+            currentPeriodEnd: new Date(next_billing_date),
+            cancelAtPeriodEnd: cancel_at_next_billing_date || false,
+            updatedAt: new Date()
+          })
+          .where(eq(userSubscriptions.dodoSubscriptionId, subscription_id));
+        
+        console.log('Updated subscription after concurrent insert:', subscription_id);
+      } else {
+        throw insertError;
+      }
+    }
   }
 }
 
@@ -110,12 +194,15 @@ async function handlePaymentEvent(eventData: any) {
     payment_id,
     subscription_id,
     customer_id,
-    customer_email,
     amount,
     currency,
     status,
-    payment_method
+    payment_method,
+    customer
   } = eventData;
+
+  // Extract customer email from customer object
+  const customer_email = customer?.email;
 
   console.log('Processing payment event:', { payment_id, status, customer_email });
 
@@ -175,8 +262,8 @@ async function handlePaymentEvent(eventData: any) {
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
-    const signature = request.headers.get('webhook-signature') || '';
     const webhookId = request.headers.get('webhook-id') || '';
+    const signature = request.headers.get('webhook-signature') || '';
     const timestamp = request.headers.get('webhook-timestamp') || '';
 
     console.log('Received webhook:', {
@@ -186,18 +273,29 @@ export async function POST(request: NextRequest) {
       bodyLength: rawBody.length
     });
 
-    // Verify webhook signature
-    const webhookSecret = process.env.DODO_WEBHOOK_SECRET;
+    // Verify webhook signature using standardwebhooks
+    const webhookSecret = process.env.NEXT_PUBLIC_DODO_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      console.error('DODO_WEBHOOK_SECRET not configured');
+      console.error('NEXT_PUBLIC_DODO_WEBHOOK_KEY not configured');
       return NextResponse.json(
         { error: 'Webhook secret not configured' },
         { status: 500 }
       );
     }
 
-    if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
-      console.error('Invalid webhook signature');
+    const webhook = new Webhook(webhookSecret);
+    
+    try {
+      const webhookHeaders = {
+        "webhook-id": webhookId,
+        "webhook-signature": signature,
+        "webhook-timestamp": timestamp,
+      };
+      
+      await webhook.verify(rawBody, webhookHeaders);
+      console.log('Webhook signature verified successfully');
+    } catch (verificationError) {
+      console.error('Webhook signature verification failed:', verificationError);
       return NextResponse.json(
         { error: 'Invalid webhook signature' },
         { status: 401 }
@@ -207,42 +305,103 @@ export async function POST(request: NextRequest) {
     // Parse the webhook payload
     const payload = JSON.parse(rawBody);
     console.log('Webhook payload type:', payload.type);
-
-    // Store webhook event for audit trail
-    await db.insert(webhookEvents).values({
-      dodoEventId: webhookId,
-      eventType: payload.type,
-      eventData: payload,
-      processed: false,
-      createdAt: new Date()
-    });
-
-    // Process different event types
-    switch (payload.type) {
-      case 'subscription.created':
-      case 'subscription.updated':
-      case 'subscription.cancelled':
-      case 'subscription.activated':
-        await handleSubscriptionEvent(payload.data);
-        break;
-
-      case 'payment.succeeded':
-      case 'payment.failed':
-      case 'payment.refunded':
-        await handlePaymentEvent(payload.data);
-        break;
-
-      default:
-        console.log('Unhandled webhook event type:', payload.type);
+    
+    // Log the full payload structure for debugging subscription events
+    if (payload.type && payload.type.startsWith('subscription.')) {
+      console.log('Subscription event payload structure:', JSON.stringify(payload, null, 2));
     }
 
-    // Mark webhook as processed
-    await db.update(webhookEvents)
-      .set({
-        processed: true,
-        processedAt: new Date()
-      })
-      .where(eq(webhookEvents.dodoEventId, webhookId));
+    // Check if webhook event already exists to avoid duplicates
+    let existingWebhook = await db.query.webhookEvents.findFirst({
+      where: eq(webhookEvents.dodoEventId, webhookId)
+    });
+
+    if (!existingWebhook) {
+      try {
+        // Store webhook event for audit trail
+        const newWebhook = await db.insert(webhookEvents).values({
+          dodoEventId: webhookId,
+          eventType: payload.type,
+          eventData: payload,
+          processed: false,
+          createdAt: new Date()
+        }).returning();
+        
+        existingWebhook = newWebhook[0];
+        console.log('Created new webhook event:', webhookId);
+      } catch (insertError) {
+        // Handle case where webhook was inserted by another concurrent request
+        if (insertError instanceof Error && insertError.message.includes('duplicate key')) {
+          console.log('Webhook event already exists (concurrent insert), fetching existing:', webhookId);
+          existingWebhook = await db.query.webhookEvents.findFirst({
+            where: eq(webhookEvents.dodoEventId, webhookId)
+          });
+        } else {
+          throw insertError;
+        }
+      }
+    } else {
+      console.log('Webhook event already exists, skipping insert:', webhookId);
+    }
+
+    // Check if webhook has already been processed successfully
+    if (existingWebhook && existingWebhook.processed) {
+      console.log('Webhook already processed successfully, skipping:', webhookId);
+      return NextResponse.json(
+        { message: 'Webhook already processed' },
+        { status: 200 }
+      );
+    }
+
+    // Process different event types
+    try {
+      console.log('Processing webhook event type:', payload.type, 'for webhook ID:', webhookId);
+      
+      switch (payload.type) {
+        case 'subscription.created':
+        case 'subscription.updated':
+        case 'subscription.cancelled':
+        case 'subscription.activated':
+        case 'subscription.renewed':
+        case 'subscription.active':
+          await handleSubscriptionEvent(payload.data);
+          break;
+
+        case 'payment.succeeded':
+        case 'payment.failed':
+        case 'payment.refunded':
+          await handlePaymentEvent(payload.data);
+          break;
+
+        default:
+          console.log('Unhandled webhook event type:', payload.type);
+      }
+
+      // Mark webhook as processed (only if it exists)
+      if (existingWebhook) {
+        await db.update(webhookEvents)
+          .set({
+            processed: true,
+            processedAt: new Date()
+          })
+          .where(eq(webhookEvents.dodoEventId, webhookId));
+      }
+    } catch (processingError) {
+      console.error('Error processing webhook event:', processingError);
+      
+      // Mark webhook as failed (only if it exists)
+      if (existingWebhook) {
+        await db.update(webhookEvents)
+          .set({
+            processed: false,
+            processingError: processingError instanceof Error ? processingError.message : 'Unknown error',
+            processedAt: new Date()
+          })
+          .where(eq(webhookEvents.dodoEventId, webhookId));
+      }
+      
+      throw processingError;
+    }
 
     return NextResponse.json(
       { message: 'Webhook processed successfully' },
@@ -252,16 +411,22 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Webhook processing error:', error);
 
-    // Mark webhook as failed
+    // Mark webhook as failed (only if it exists)
     const webhookId = request.headers.get('webhook-id');
     if (webhookId) {
-      await db.update(webhookEvents)
-        .set({
-          processed: false,
-          processingError: error instanceof Error ? error.message : 'Unknown error',
-          processedAt: new Date()
-        })
-        .where(eq(webhookEvents.dodoEventId, webhookId));
+      const existingWebhook = await db.query.webhookEvents.findFirst({
+        where: eq(webhookEvents.dodoEventId, webhookId)
+      });
+      
+      if (existingWebhook) {
+        await db.update(webhookEvents)
+          .set({
+            processed: false,
+            processingError: error instanceof Error ? error.message : 'Unknown error',
+            processedAt: new Date()
+          })
+          .where(eq(webhookEvents.dodoEventId, webhookId));
+      }
     }
 
     return NextResponse.json(
