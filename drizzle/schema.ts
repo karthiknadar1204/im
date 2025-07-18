@@ -20,7 +20,7 @@ export const generatedImages = pgTable("generated_images", {
 	id: serial().primaryKey().notNull(),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
 	userId: uuid("user_id"),
-	model: text().default('),
+	model: text().default(''),
 	imageName: text("image_name"),
 	prompt: text(),
 	guidance: numeric(),

@@ -1,4 +1,5 @@
 import { addMonths, startOfMonth, endOfMonth, isAfter, isBefore, isWithinInterval } from 'date-fns';
+import { usageTracking } from '@/configs/schema';
 import type { 
   SubscriptionPlan, 
   UserSubscription, 
@@ -296,4 +297,54 @@ export function getBillingPeriodDaysRemaining(subscription: UserSubscription): n
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
   return Math.max(0, diffDays);
+}
+
+/**
+ * Check if billing period has rolled over and create new usage tracking if needed
+ */
+export async function handleBillingPeriodRollover(
+  db: any,
+  subscription: UserSubscription,
+  plan: any,
+  dbUser: any
+): Promise<{ needsRollover: boolean; newUsage?: any }> {
+  const now = new Date();
+  const periodEnd = new Date(subscription.currentPeriodEnd);
+  
+  // Check if current period has ended
+  if (now <= periodEnd) {
+    return { needsRollover: false };
+  }
+  
+  // Period has ended, create new usage tracking record
+  const newPeriodStart = periodEnd;
+  const newPeriodEnd = new Date(newPeriodStart.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  
+  try {
+    // Create new usage tracking record for new billing period
+    const newUsageResult = await db.insert(usageTracking).values({
+      userId: dbUser.id,
+      subscriptionId: subscription.id,
+      periodStart: newPeriodStart,
+      periodEnd: newPeriodEnd,
+      imagesGeneratedCount: 0,
+      modelsTrainedCount: 0,
+      imageGenerationLimit: plan.imageGenerationLimit,
+      modelTrainingLimit: plan.modelTrainingLimit,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+    
+    const newUsage = newUsageResult[0];
+    
+    console.log(`Billing period rolled over for user ${dbUser.id}. New usage record created.`);
+    
+    return { 
+      needsRollover: true, 
+      newUsage 
+    };
+  } catch (error) {
+    console.error('Error creating new usage tracking record for rollover:', error);
+    return { needsRollover: false };
+  }
 } 

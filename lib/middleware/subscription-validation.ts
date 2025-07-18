@@ -11,7 +11,8 @@ import {
   getCurrentBillingPeriod,
   validateUsage,
   isSubscriptionActive,
-  isSubscriptionExpired
+  isSubscriptionExpired,
+  handleBillingPeriodRollover
 } from '@/lib/utils/subscription';
 
 export interface SubscriptionValidationResult {
@@ -124,8 +125,14 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
       };
     }
 
+    // Cast subscription status to proper type for validation functions
+    const typedSubscription = {
+      ...subscription,
+      status: subscription.status as any // SubscriptionStatus
+    };
+
     // Check if subscription is active
-    if (!isSubscriptionActive(subscription)) {
+    if (!isSubscriptionActive(typedSubscription)) {
       return {
         canProceed: false,
         reason: 'Subscription is not active',
@@ -134,40 +141,11 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
     }
 
     // Check if subscription is expired
-    if (isSubscriptionExpired(subscription)) {
+    if (isSubscriptionExpired(typedSubscription)) {
       return {
         canProceed: false,
         reason: 'Subscription has expired',
         subscription
-      };
-    }
-
-    // Get current billing period
-    const billingPeriod = getCurrentBillingPeriod(subscription);
-
-    // Get usage for current billing period
-    const usageResult = await db.select().from(usageTracking)
-      .where(and(
-        eq(usageTracking.userId, dbUser.id),
-        eq(usageTracking.subscriptionId, subscription.id),
-        gte(usageTracking.periodStart, billingPeriod.start),
-        lte(usageTracking.periodEnd, billingPeriod.end)
-      ))
-      .limit(1);
-    const usage = usageResult[0];
-
-    if (!usage) {
-      // Get the subscription plan to include in error response
-      const planResult = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
-      const plan = planResult[0];
-      
-      return {
-        canProceed: false,
-        reason: 'Usage tracking not found',
-        subscription: {
-          ...subscription,
-          plan: plan
-        }
       };
     }
 
@@ -182,8 +160,42 @@ export async function validateImageGeneration(): Promise<SubscriptionValidationR
       };
     }
 
+    // Check for billing period rollover
+    const rolloverResult = await handleBillingPeriodRollover(db, typedSubscription, plan, dbUser);
+    let usage;
+
+    if (rolloverResult.needsRollover && rolloverResult.newUsage) {
+      // Use the newly created usage record
+      usage = rolloverResult.newUsage;
+    } else {
+      // Get current billing period
+      const billingPeriod = getCurrentBillingPeriod(typedSubscription);
+
+      // Get usage for current billing period
+      const usageResult = await db.select().from(usageTracking)
+        .where(and(
+          eq(usageTracking.userId, dbUser.id),
+          eq(usageTracking.subscriptionId, subscription.id),
+          gte(usageTracking.periodStart, billingPeriod.start),
+          lte(usageTracking.periodEnd, billingPeriod.end)
+        ))
+        .limit(1);
+      usage = usageResult[0];
+
+      if (!usage) {
+        return {
+          canProceed: false,
+          reason: 'Usage tracking not found',
+          subscription: {
+            ...subscription,
+            plan: plan
+          }
+        };
+      }
+    }
+
     // Validate usage
-    const validation = validateUsage(subscription, plan, usage, 'generate_image');
+    const validation = validateUsage(typedSubscription, plan, usage, 'generate_image');
 
     if (!validation.canGenerateImage) {
       return {
@@ -268,8 +280,14 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
       };
     }
 
+    // Cast subscription status to proper type for validation functions
+    const typedSubscription = {
+      ...subscription,
+      status: subscription.status as any // SubscriptionStatus
+    };
+
     // Check if subscription is active
-    if (!isSubscriptionActive(subscription)) {
+    if (!isSubscriptionActive(typedSubscription)) {
       return {
         canProceed: false,
         reason: 'Subscription is not active',
@@ -278,32 +296,11 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
     }
 
     // Check if subscription is expired
-    if (isSubscriptionExpired(subscription)) {
+    if (isSubscriptionExpired(typedSubscription)) {
       return {
         canProceed: false,
         reason: 'Subscription has expired',
         subscription
-      };
-    }
-
-    // Get current billing period
-    const billingPeriod = getCurrentBillingPeriod(subscription);
-
-    // Get usage for current billing period
-    const usageResult = await db.select().from(usageTracking)
-      .where(and(
-        eq(usageTracking.userId, dbUser.id),
-        eq(usageTracking.subscriptionId, subscription.id),
-        gte(usageTracking.periodStart, billingPeriod.start),
-        lte(usageTracking.periodEnd, billingPeriod.end)
-      ))
-      .limit(1);
-    const usage = usageResult[0];
-
-    if (!usage) {
-      return {
-        canProceed: false,
-        reason: 'Usage tracking not found'
       };
     }
 
@@ -318,8 +315,38 @@ export async function validateModelTraining(): Promise<SubscriptionValidationRes
       };
     }
 
+    // Check for billing period rollover
+    const rolloverResult = await handleBillingPeriodRollover(db, typedSubscription, plan, dbUser);
+    let usage;
+
+    if (rolloverResult.needsRollover && rolloverResult.newUsage) {
+      // Use the newly created usage record
+      usage = rolloverResult.newUsage;
+    } else {
+      // Get current billing period
+      const billingPeriod = getCurrentBillingPeriod(typedSubscription);
+
+      // Get usage for current billing period
+      const usageResult = await db.select().from(usageTracking)
+        .where(and(
+          eq(usageTracking.userId, dbUser.id),
+          eq(usageTracking.subscriptionId, subscription.id),
+          gte(usageTracking.periodStart, billingPeriod.start),
+          lte(usageTracking.periodEnd, billingPeriod.end)
+        ))
+        .limit(1);
+      usage = usageResult[0];
+
+      if (!usage) {
+        return {
+          canProceed: false,
+          reason: 'Usage tracking not found'
+        };
+      }
+    }
+
     // Validate usage
-    const validation = validateUsage(subscription, plan, usage, 'train_model');
+    const validation = validateUsage(typedSubscription, plan, usage, 'train_model');
 
     if (!validation.canTrainModel) {
       return {
@@ -382,36 +409,59 @@ export async function incrementUsage(action: 'generate_image' | 'train_model'): 
       return false;
     }
 
-    // Get current billing period
-    const billingPeriod = getCurrentBillingPeriod(subscription);
+    // Cast subscription status to proper type for validation functions
+    const typedSubscription = {
+      ...subscription,
+      status: subscription.status as any // SubscriptionStatus
+    };
 
-    // Get or create usage for current billing period
-    let usageResult = await db.select().from(usageTracking)
-      .where(and(
-        eq(usageTracking.userId, dbUser.id),
-        eq(usageTracking.subscriptionId, subscription.id),
-        gte(usageTracking.periodStart, billingPeriod.start),
-        lte(usageTracking.periodEnd, billingPeriod.end)
-      ))
-      .limit(1);
-    let usage = usageResult[0];
+    // Get the subscription plan
+    const planResult = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+    const plan = planResult[0];
 
-    if (!usage) {
-      // Create new usage record for current period
-      const newUsage = await db.insert(usageTracking).values({
-        userId: dbUser.id,
-        subscriptionId: subscription.id,
-        periodStart: billingPeriod.start,
-        periodEnd: billingPeriod.end,
-        imagesGeneratedCount: 0,
-        modelsTrainedCount: 0,
-        imageGenerationLimit: null,
-        modelTrainingLimit: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }).returning();
+    if (!plan) {
+      return false;
+    }
 
-      usage = newUsage[0];
+    // Check for billing period rollover
+    const rolloverResult = await handleBillingPeriodRollover(db, typedSubscription, plan, dbUser);
+    let usage;
+
+    if (rolloverResult.needsRollover && rolloverResult.newUsage) {
+      // Use the newly created usage record
+      usage = rolloverResult.newUsage;
+    } else {
+      // Get current billing period
+      const billingPeriod = getCurrentBillingPeriod(typedSubscription);
+
+      // Get or create usage for current billing period
+      let usageResult = await db.select().from(usageTracking)
+        .where(and(
+          eq(usageTracking.userId, dbUser.id),
+          eq(usageTracking.subscriptionId, subscription.id),
+          gte(usageTracking.periodStart, billingPeriod.start),
+          lte(usageTracking.periodEnd, billingPeriod.end)
+        ))
+        .limit(1);
+      usage = usageResult[0];
+
+      if (!usage) {
+        // Create new usage record for current period
+        const newUsage = await db.insert(usageTracking).values({
+          userId: dbUser.id,
+          subscriptionId: subscription.id,
+          periodStart: billingPeriod.start,
+          periodEnd: billingPeriod.end,
+          imagesGeneratedCount: 0,
+          modelsTrainedCount: 0,
+          imageGenerationLimit: plan.imageGenerationLimit,
+          modelTrainingLimit: plan.modelTrainingLimit,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }).returning();
+
+        usage = newUsage[0];
+      }
     }
 
     // Increment the appropriate counter
