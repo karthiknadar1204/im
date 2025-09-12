@@ -24,13 +24,26 @@ const r2 = new S3Client({
   },
 });
 
-// Function to download and store image to R2
-async function downloadAndStoreImage(replicateUrl: string, userId: number, imageId: string, index: number): Promise<string> {
+// Function to download and store image to R2 with retry logic
+async function downloadAndStoreImage(replicateUrl: string, userId: number, imageId: string, index: number, retryCount = 0): Promise<string> {
+  const maxRetries = 2;
+  
   try {
-    // Download the image from Replicate
-    const response = await fetch(replicateUrl);
+    // Download the image from Replicate with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    const response = await fetch(replicateUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ImageDownloader/1.0)',
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
-      throw new Error(`Failed to download image: ${response.statusText}`);
+      throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
     }
     
     const imageBuffer = await response.arrayBuffer();
@@ -58,7 +71,27 @@ async function downloadAndStoreImage(replicateUrl: string, userId: number, image
     return generateR2PublicUrl(process.env.CLOUDFLARE_BUCKET!, r2Key);
   } catch (error) {
     console.error('Error downloading and storing image:', error);
-    // Fallback to original URL if download fails
+    
+    // Check if it's a timeout error
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        console.error('Download timeout for URL:', replicateUrl);
+      } else if (error.message.includes('Connect Timeout')) {
+        console.error('Connection timeout for URL:', replicateUrl);
+      } else {
+        console.error('Download error for URL:', replicateUrl, 'Error:', error.message);
+      }
+    }
+    
+    // Retry logic for network errors
+    if (retryCount < maxRetries && error instanceof Error && 
+        (error.name === 'AbortError' || error.message.includes('timeout') || error.message.includes('fetch failed'))) {
+      console.log(`Retrying download (attempt ${retryCount + 1}/${maxRetries}) for URL:`, replicateUrl);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+      return downloadAndStoreImage(replicateUrl, userId, imageId, index, retryCount + 1);
+    }
+    
+    // Fallback to original URL if download fails after retries
     return replicateUrl;
   }
 }
