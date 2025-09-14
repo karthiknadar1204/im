@@ -24,7 +24,7 @@ const replicate = new Replicate({
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate user authentication
+
     const user = await currentUser();
     if (!user || !user.id) {
       return NextResponse.json(
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists in database
+
     const dbUser = await db.select().from(users).where(eq(users.clerkId, user.id));
     if (!dbUser[0]) {
       return NextResponse.json(
@@ -44,31 +44,14 @@ export async function POST(request: NextRequest) {
 
     const userId = dbUser[0].id;
 
-    // Import subscription validation middleware
-    const { validateModelTraining, incrementUsage } = await import('@/lib/middleware/subscription-validation');
-    
-    // Validate subscription and usage limits before starting model training
-    const validationResult = await validateModelTraining();
-    if (!validationResult.canProceed) {
-      return NextResponse.json(
-        { 
-          error: validationResult.reason || "Subscription validation failed",
-          requiresUpgrade: true,
-          currentPlan: validationResult.subscription?.plan,
-          usage: validationResult.usage
-        },
-        { status: 403 }
-      );
-    }
-
     const formData = await request.formData();
     
-    // Extract form data
+
     const modelName = formData.get('modelName') as string;
     const gender = formData.get('gender') as string;
     const trainingData = formData.get('trainingData') as File;
     
-    // Validate required fields
+
     if (!modelName || !gender || !trainingData) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -76,7 +59,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Validate file type
+
     if (!trainingData.name.endsWith('.zip')) {
       return NextResponse.json(
         { error: 'Training data must be a ZIP file' },
@@ -84,11 +67,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Convert File to Buffer for R2 upload
+
     const bytes = await trainingData.arrayBuffer();
     const buffer = Buffer.from(bytes);
     
-    // Upload to Cloudflare R2
+
     const r2Key = `training-data/${Date.now()}-${trainingData.name}`;
     const command = new PutObjectCommand({
       Bucket: process.env.CLOUDFLARE_BUCKET,
@@ -105,7 +88,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate signed URL for the uploaded file (valid for 1 hour)
+
     const getObjectCommand = new GetObjectCommand({
       Bucket: process.env.CLOUDFLARE_BUCKET,
       Key: r2Key,
@@ -113,25 +96,25 @@ export async function POST(request: NextRequest) {
     
     const signedUrl = await getSignedUrl(r2, getObjectCommand, { expiresIn: 3600 });
 
-    // Generate model ID using user ID, model name, and date
+
     const timestamp = Date.now();
-    const dateStr = new Date(timestamp).toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD format
+    const dateStr = new Date(timestamp).toISOString().split('T')[0].replace(/-/g, ''); 
     const modelNameSlug = modelName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
     const modelId = `model_${dbUser[0].id}_${modelNameSlug}_${dateStr}`;
 
-    // creating the model
+
     await replicate.models.create("karthiknadar1204",modelId,{
         visibility:"private",
         hardware:"gpu-a100-large",
     })
 
-    //training the created model
+
     const training = await replicate.trainings.create(
         "ostris",
         "flux-dev-lora-trainer",
         "26dce37af90b9d997eeb970d92e47de3064d46c300504ae376c75bef6a9022d2",
         {
-          // You need to create a model on Replicate that will be the destination for the trained version.
+
           destination: `karthiknadar1204/${modelId}`,
           input: {
             steps: 1000,
@@ -140,35 +123,33 @@ export async function POST(request: NextRequest) {
             trigger_word: "omgx",
           },
           webhook:`${WEBHOOK_URL}/api/webhook/training?userId=${dbUser[0].id}&modelId=${modelId}&fileName=${trainingData.name}`,
-          webhook_events_filter: ["completed"], // optional
+          webhook_events_filter: ["completed"]
         }
       );
 
     console.log(training)
     
-    // Use the actual training ID from Replicate response
+
     const trainingJobId = training.id;
     console.log(trainingJobId)
     
-    // Store training data in database with the actual Replicate training ID
+
     const [trainingRecord] = await db.insert(modelTraining).values({
       userId: dbUser[0].id,
       modelName,
       gender,
       trainingDataUrl: `${process.env.CLOUDFLARE_ENDPOINT}/${process.env.CLOUDFLARE_BUCKET}/${r2Key}`,
-      status: training.status, // Use status from Replicate response
+      status: training.status,
       trainingJobId,
       modelId,
       trainingProgress: 0,
-      // Don't store the training model version - we'll get the final version from the webhook when training completes
-    }).returning();
 
-    // Increment usage counter after successful model training initiation
+    }).returning();
     try {
-      await incrementUsage('train_model');
+
     } catch (error) {
       console.error("Failed to increment usage:", error);
-      // Don't fail the training initiation if usage tracking fails
+
     }
 
 
@@ -179,7 +160,7 @@ export async function POST(request: NextRequest) {
       trainingJobId,
       modelName,
       gender,
-      status: training.status || 'pending', // Use actual status from Replicate
+      status: training.status || 'pending', 
       userId: dbUser[0].id,
       trainingId: trainingRecord.id,
       modelId,

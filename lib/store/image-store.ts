@@ -29,7 +29,7 @@ export const useImageStore = create<ImageStore>((set) => ({
         id: id || crypto.randomUUID(),
         createdAt: new Date(),
       },
-      ...state.images, // Add new images at the top
+      ...state.images, 
     ],
   })),
   

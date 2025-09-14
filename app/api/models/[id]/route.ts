@@ -20,7 +20,7 @@ export async function DELETE(
             return NextResponse.json({ message: "Invalid model ID" }, { status: 400 })
         }
 
-        // Get the model record to check ownership and get Replicate info
+
         const [model] = await db
             .select({
                 id: modelTraining.id,
@@ -48,7 +48,7 @@ export async function DELETE(
             userId: model.userId
         })
 
-        // Only attempt Replicate deletion if we have both modelId and version AND they appear to be valid
+
         if (model.modelId && model.version) {
             try {
                 const replicateApiKey = process.env.REPLICATE_API_TOKEN
@@ -60,12 +60,10 @@ export async function DELETE(
                     )
                 }
 
-                // Check if this is a training job ID (which we shouldn't delete) or actual model ID
-                // Training job IDs are typically long alphanumeric strings like 'xaffag0wtxrm80cr0ejvsy8g0m'
+
                 const isTrainingJobId = model.modelId.length > 20 && /^[a-zA-Z0-9]+$/.test(model.modelId);
                 
-                // Only skip if it's a training job ID - final model versions are also long hex strings
-                // but they're valid for deletion
+
                 if (isTrainingJobId) {
                     console.log(`Skipping Replicate deletion:`)
                     console.log(`- ModelId: ${model.modelId} (appears to be training job ID)`)
@@ -74,7 +72,7 @@ export async function DELETE(
                 } else {
                     console.log(`Attempting to delete model from Replicate: ${model.modelId}:${model.version}`)
                     
-                    // First, try to delete the specific version
+
                     const versionDeleteResponse = await fetch(
                         `https://api.replicate.com/v1/models/karthiknadar1204/${model.modelId}/versions/${model.version}`,
                         {
@@ -95,7 +93,7 @@ export async function DELETE(
                         console.log(`Successfully deleted model version ${model.version} from Replicate`)
                     }
                     
-                    // Also try to delete the entire model (this should remove all versions)
+
                     const modelDeleteResponse = await fetch(
                         `https://api.replicate.com/v1/models/karthiknadar1204/${model.modelId}`,
                         {
@@ -112,20 +110,20 @@ export async function DELETE(
                     if (!modelDeleteResponse.ok) {
                         const errorText = await modelDeleteResponse.text()
                         console.error('Failed to delete entire model from Replicate:', errorText)
-                        // Continue with database deletion even if Replicate deletion fails
+
                     } else {
                         console.log(`Successfully deleted entire model ${model.modelId} from Replicate`)
                     }
                 }
             } catch (replicateError) {
                 console.error('Error deleting from Replicate:', replicateError)
-                // Continue with database deletion even if Replicate deletion fails
+
             }
         } else {
             console.log('No modelId or version found, skipping Replicate deletion')
         }
 
-        // Delete from database
+
         await db
             .delete(modelTraining)
             .where(eq(modelTraining.id, modelId))

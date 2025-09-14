@@ -29,7 +29,7 @@ export const imageGenerationSchema = z.object({
   outputQuality: z.number().min(1).max(100).step(1),
   prompt: z.string().min(1, "Please enter a prompt"),
 }).superRefine((data, ctx) => {
-  // Validate inference steps based on model
+
   if (data.model === "flux-dev" && (data.numInferenceSteps < 1 || data.numInferenceSteps > 50)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -44,7 +44,7 @@ export const imageGenerationSchema = z.object({
       path: ["numInferenceSteps"],
     });
   }
-  // For custom models, use default inference steps validation (1-50)
+
   if (!["flux-dev", "flux-schnell"].includes(data.model) && (data.numInferenceSteps < 1 || data.numInferenceSteps > 50)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
