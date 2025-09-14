@@ -254,16 +254,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Import Dodo functions
-    const { createUserSubscription } = await import('@/lib/utils/dodo-payments');
+    // Get subscription plan
+    const plan = await db.query.subscriptionPlans.findFirst({
+      where: eq(subscriptionPlans.name, planName)
+    });
 
-    // Create subscription in Dodo and our database
-    const result = await createUserSubscription(user.id, planName, paymentMethodId);
+    if (!plan) {
+      return NextResponse.json(
+        { error: 'Subscription plan not found' },
+        { status: 404 }
+      );
+    }
+
+    // Create subscription directly in database
+    const subscription = await db.insert(userSubscriptions).values({
+      userId: user.id,
+      planId: plan.id,
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      cancelAtPeriodEnd: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }).returning();
 
     return NextResponse.json({
       message: 'Subscription created successfully',
-      subscription: result.subscription,
-      customer: result.customer
+      subscription: subscription[0]
     });
 
   } catch (error) {

@@ -17,7 +17,6 @@ export interface SubscriptionPlan {
   modelTrainingLimit: number | null; // null for unlimited
   features: PlanFeatures;
   isActive: boolean;
-  dodoPlanId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,8 +37,6 @@ export interface UserSubscription {
   currentPeriodEnd: Date;
   trialStart?: Date;
   trialEnd?: Date;
-  dodoSubscriptionId?: string;
-  dodoCustomerId?: string;
   cancelAtPeriodEnd: boolean;
   cancelledAt?: Date;
   createdAt: Date;
@@ -70,7 +67,6 @@ export interface PaymentTransaction {
   id: number;
   userId: number;
   subscriptionId?: number;
-  dodoPaymentId?: string;
   amount: number;
   currency: string;
   status: PaymentStatus;
@@ -87,7 +83,7 @@ export interface PaymentTransaction {
 
 export interface WebhookEvent {
   id: number;
-  dodoEventId?: string;
+  eventId?: string;
   eventType: string;
   eventData: any;
   processed: boolean;
@@ -130,42 +126,6 @@ export interface CancelSubscriptionRequest {
   cancelAtPeriodEnd?: boolean;
 }
 
-// Dodo Payments Types
-export interface DodoCustomer {
-  id: string;
-  email: string;
-  name?: string;
-  created_at: string;
-}
-
-export interface DodoSubscription {
-  id: string;
-  customer_id: string;
-  plan_id: string;
-  status: string;
-  current_period_start: string;
-  current_period_end: string;
-  cancel_at_period_end: boolean;
-  created_at: string;
-}
-
-export interface DodoPayment {
-  id: string;
-  amount: number;
-  currency: string;
-  status: string;
-  payment_method: string;
-  created_at: string;
-}
-
-export interface DodoWebhookEvent {
-  id: string;
-  type: string;
-  data: {
-    object: DodoSubscription | DodoPayment | DodoCustomer;
-  };
-  created: string;
-}
 
 // Usage Calculation Types
 export interface UsageLimits {

@@ -8,6 +8,13 @@
       "when": 1752823408755,
       "tag": "0000_tricky_blink",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1757852688395,
+      "tag": "0001_heavy_red_hulk",
+      "breakpoints": true
     }
   ]
 }
